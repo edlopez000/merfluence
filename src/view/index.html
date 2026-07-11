@@ -41,10 +41,21 @@
       .stage.dragging {
         cursor: grabbing;
       }
+      /* The pan layer shrinks to the diagram's width and centres itself in the
+         macro column, so a diagram narrower than the column sits in the middle
+         instead of hugging the left. max-width keeps Mermaid's shrink-to-fit. */
+      .pan {
+        width: fit-content;
+        max-width: 100%;
+        margin: 0 auto;
+      }
       .stage svg {
         display: block;
         max-width: 100%;
         height: auto;
+      }
+      .stage.no-shrink .pan {
+        max-width: none;
       }
       .stage.no-shrink svg {
         max-width: none;
@@ -87,11 +98,40 @@
         outline: 2px solid var(--ds-border-focused, #388bff);
         outline-offset: 1px;
       }
-
-      .meta {
-        font-size: 11px;
+      .toolbar .zoom-level {
+        display: flex;
+        align-items: center;
+        padding: 0 4px;
+        font-size: 12px;
+        line-height: 1;
         color: var(--ds-text-subtlest, #626f86);
-        padding: 2px 0 0;
+        font-variant-numeric: tabular-nums;
+        min-width: 3.5ch;
+        justify-content: center;
+      }
+
+      /* Version stamp: overlaid bottom-left and revealed on hover, like the
+         toolbar, so it's there for bug reports without cluttering every diagram.
+         Absolute (not in flow) so it reserves no empty line; pointer-events none
+         so it never swallows a drag that starts over it. */
+      .meta {
+        position: absolute;
+        bottom: 4px;
+        left: 4px;
+        font-size: 11px;
+        line-height: 1;
+        color: var(--ds-text-subtlest, #626f86);
+        background: var(--ds-surface-overlay, #fff);
+        border: 1px solid var(--ds-border, #dfe1e6);
+        border-radius: 4px;
+        padding: 3px 6px;
+        opacity: 0;
+        transition: opacity 120ms ease-in;
+        pointer-events: none;
+      }
+      .root:hover .meta,
+      .toolbar:focus-within ~ .meta {
+        opacity: 1;
       }
 
       .message {
@@ -127,7 +167,8 @@
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .toolbar {
+        .toolbar,
+        .meta {
           transition: none;
         }
       }
