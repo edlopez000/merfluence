@@ -98,7 +98,12 @@ export function resize() {
 }
 
 export async function submitConfig(values) {
-  await view.submit(values);
+  // A Confluence Custom UI macro config must submit its fields WRAPPED as
+  // { config: fields }. Passing the fields object directly makes the host reject
+  // the save with `view.submit(): Invalid "config" provided. Expected object`,
+  // because it reads payload.config and finds it undefined. The saved fields
+  // come back from view.getContext() under extension.config (see getConfig).
+  await view.submit({ config: values });
 }
 
 export async function closeConfig() {

@@ -59,16 +59,19 @@ Mermaid only loads for a macro once it scrolls near the viewport. Diagrams above
 the fold render immediately; the rest cost nothing until you reach them.
 
 **Why the rendered SVG is not cached in config.** Caching the SVG would let a
-reader skip Mermaid entirely, and it was tried — but it does not work within
-this app's permissions. Macro config is stored in the page's ADF, which is
-size-limited; a rendered SVG is tens of KB and overflows it, making
-`view.submit()` reject the save with *"Invalid config provided"*. The stores
-that *could* hold bulky derived data — Forge storage, or a content property —
-each need a resolver `function` or a scope, and this app deliberately has
-neither. So the diagram is re-rendered on view rather than cached. (If this ever
-becomes a bottleneck, gzip-compressing the SVG with the browser-native
-`CompressionStream` — no dependency, no scope — might fit a small diagram under
-the config limit; it was not needed here.)
+reader skip Mermaid entirely, and it was tried, but the right home for bulky
+derived data is Forge storage or a content property — and each needs a resolver
+`function` or a scope this app deliberately does not have. Macro config is the
+only scope-free store, but it lives in the page's ADF and is meant for small
+values, not tens of KB of markup per diagram. So the diagram is re-rendered on
+view rather than cached. (If it ever becomes a bottleneck, gzip-compressing the
+SVG with the browser-native `CompressionStream` — no dependency, no scope —
+could shrink it enough to reconsider; it was not needed here.)
+
+Note: a Custom UI macro config must submit its fields wrapped as
+`view.submit({ config: fields })`, not the raw object — the host reads
+`payload.config` and otherwise rejects the save with *"Invalid config provided.
+Expected object"*. See `src/lib/host.js`.
 
 ## Mermaid version currency
 

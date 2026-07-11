@@ -53,13 +53,13 @@ iframe root). `width: fit-content` CSS is the resize fallback. Flag anything
 unverifiable so the user checks live docs.
 
 **1. Cache rendered SVG in macro config.** ~~On save, persist `{ svgLight, svgDark }`
-into config…~~ **REMOVED 2026-07-11.** Implemented, then reverted: macro config is
-stored in the page ADF and is size-limited, so a rendered SVG (tens of KB)
-overflows it and makes `view.submit()` reject the save (*"Invalid config
-provided"*). The scope-free stores that could hold it (Forge storage, content
-properties) need a resolver or a scope — both forbidden by the invariant. Config
-now holds only `source`, `mermaidVersion`, `theme`, `useMaxWidth`. Lazy render
-(step 2) is the surviving optimization.
+into config…~~ **REMOVED 2026-07-11 by choice.** Config now holds only `source`,
+`mermaidVersion`, `theme`, `useMaxWidth`; lazy render (step 2) is the surviving
+optimization. (The live save failure that prompted the revert turned out to be a
+missing `{ config: ... }` wrapper in `view.submit`, not config size — that bug is
+fixed separately in `src/lib/host.js`. The SVG cache could technically work now,
+but the proper store for derived blobs still needs a resolver/scope the invariant
+forbids, so it stays out.)
 
 **2. Lazy render on cache miss.** In the view, wrap the render trigger in an
 `IntersectionObserver` so Mermaid loads only when the macro scrolls into view. On
