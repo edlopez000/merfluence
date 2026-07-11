@@ -1,8 +1,14 @@
 modules:
   macro:
     - key: mermaid-diagram
-      title: Mermaid diagram
-      description: Diagrams as code. Rendered in your browser, never sent anywhere.
+      # Display name only. The key stays 'mermaid-diagram' because it is baked
+      # into the ADF of every diagram already inserted on a page — renaming it
+      # would orphan them.
+      title: Merfluence
+      # The "/" quick-insert menu searches only title + description (Forge has no
+      # keyword/alias field), so "Mermaid" leads the description to make the macro
+      # surface when a user types /mermaid as well as /merfluence.
+      description: Mermaid diagrams as code. Rendered in your browser, never sent anywhere.
       resource: main
       # Diagrams are block-level content: own line, full available width (the
       # view sizes itself with fit-content / min-width:100%). 'default' is not a

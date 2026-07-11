@@ -1,4 +1,4 @@
-# Mermaid for Confluence
+# Merfluence
 
 A free, open-source Confluence Cloud macro that renders [Mermaid](https://mermaid.js.org/)
 diagrams. Built on Atlassian Forge.

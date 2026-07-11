@@ -1,6 +1,6 @@
-# Merflounce — Claude working agreement
+# Merfluence — Claude working agreement
 
-Merflounce is a free, open-source **Confluence Cloud macro** (Atlassian Forge,
+Merfluence is a free, open-source **Confluence Cloud macro** (Atlassian Forge,
 **Custom UI**) that renders **Mermaid** diagrams entirely in the browser.
 
 ## The invariant that defines this app
@@ -78,6 +78,6 @@ Note the observed Forge CDN cache headers in the README.
 
 ## Note on AGENTS.md
 The repo's `AGENTS.md` is a generic Forge-assistant persona that assumes
-**UI Kit** apps (`@forge/react` only, no Custom UI, `forge create`). Merflounce
+**UI Kit** apps (`@forge/react` only, no Custom UI, `forge create`). Merfluence
 is deliberately **Custom UI** (React + Vite + Mermaid + CodeMirror). Where the
 two conflict, **this file and the user's brief win.**
