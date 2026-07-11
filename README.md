@@ -1,11 +1,50 @@
 # Merfluence
 
-A free, open-source Confluence Cloud macro that renders [Mermaid](https://mermaid.js.org/)
-diagrams. Built on Atlassian Forge.
+> Diagrams as code for Confluence Cloud. Write [Mermaid](https://mermaid.js.org/), get a rendered diagram — entirely in your browser, with nothing sent anywhere.
 
-## What makes it different
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Built on Atlassian Forge](https://img.shields.io/badge/Built%20on-Atlassian%20Forge-0052CC)
+![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D)
 
-Read `manifest.yml`. That file is the product.
+Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Forge](https://developer.atlassian.com/platform/forge/), that renders Mermaid diagrams client-side. Diagram source lives in the page, and the rendering happens in the reader's browser. The app has no backend and requests no data-access permissions, so your diagrams never leave Atlassian — or reach us.
+
+## Highlights
+
+- **Private by design** — no API scopes, no external network access, no backend. The only permission requested is inline styles, which Mermaid needs to style its SVG.
+- **Client-side rendering** — diagrams are generated with Mermaid and sanitized with DOMPurify before display.
+- **Fast on large pages** — rendered diagrams are cached in the macro, and uncached diagrams render lazily as they scroll into view.
+- **Version-stable** — pin a Mermaid major version per diagram, so existing diagrams don't break when Mermaid ships changes.
+- **Free and open source** — MIT licensed, with public source so the privacy claims are verifiable.
+
+## Features
+
+- All major Mermaid diagram types — flowcharts, sequence, class, state, entity-relationship, Gantt, pie, and more
+- A live editor with syntax highlighting, starter templates, and inline error reporting
+- Drag and drop a `.mmd` file, or a Markdown file containing a ` ```mermaid ` block, straight onto the editor
+- Automatic light/dark theming that follows Confluence
+- Pan, zoom, fullscreen, and one-click export to SVG or PNG
+- Copy the source from any rendered diagram
+
+## Installation
+
+### From the Atlassian Marketplace
+
+Install Merfluence from its Marketplace listing. Then, on any Confluence page, type `/mermaid` (or `/merfluence`) and insert the macro.
+
+### From source
+
+See [Development](#development) to build and deploy your own instance.
+
+## Usage
+
+1. On a Confluence page, type `/mermaid` and insert the **Merfluence** macro.
+2. Write Mermaid in the editor, start from a template, or drag in a `.mmd`/Markdown file — the preview updates as you type.
+3. Optionally pin a Mermaid version or set the theme, then **Save diagram**.
+4. Readers see the rendered diagram with pan, zoom, fullscreen, and SVG/PNG export.
+
+## Privacy & security
+
+The manifest is the product:
 
 ```yaml
 permissions:
@@ -14,184 +53,66 @@ permissions:
       - 'unsafe-inline'
 ```
 
-There is no `scopes:` block, so the app cannot read a single page. There is no
-`external:` block, so it cannot reach a host outside Atlassian. There is no
-`function:` block, so it has no backend — no serverless handler exists that
-could receive your diagram source, let alone forward it somewhere.
+- **No `scopes`** — the app cannot read any page through the Confluence REST API.
+- **No `external`** — the app cannot contact any host outside Atlassian.
+- **No `function`** — there is no backend; no handler exists that could receive a diagram, let alone forward it.
 
-Your Mermaid source is stored as macro config inside the page's own document
-body. It is rendered to SVG by JavaScript running in your browser. At install
-time, Confluence shows an admin exactly what the app asks for, and the answer
-is: inline styles.
+Diagram source is stored as macro configuration in the page's own body and rendered to SVG by JavaScript in the reader's browser. The single declared permission — inline styles — is required only because Mermaid writes `style="…"` attributes onto the SVG it generates. Styles only; never scripts, never `unsafe-eval`.
 
-The one declared permission is forced. Mermaid writes `style=""` attributes onto
-the SVG it generates, and Forge blocks inline styles by default. Styles only —
-never `scripts`, never `unsafe-eval`.
-
-## What it does not do
-
-**Word export.** Forge macros need an `adfExport` function to appear in Word
-exports, and adding one currently overrides the high-fidelity PDF renderer with
-the same limited ADF output ([CONFCLOUD-83083][1]). Rather than degrade the
-common case to serve the rare one, this app ships no exporter. Use the toolbar's
-SVG or PNG download instead.
-
-[1]: https://jira.atlassian.com/browse/CONFCLOUD-83083
-
-## Security posture
-
-Macro config is authored by anyone who can edit the page and rendered for
-everyone who can read it. That is an untrusted-input boundary, so:
+Because macro configuration can be authored by anyone who can edit a page and is rendered for everyone who can read it, all diagram input is treated as untrusted. Three independent layers protect readers:
 
 - `securityLevel: 'strict'` — Mermaid `click` directives parse but stay inert.
-- `htmlLabels: false` — no `<foreignObject>`, so labels cannot smuggle HTML.
-- DOMPurify with the SVG profile sanitizes the output regardless.
+- `htmlLabels: false` — no `<foreignObject>`, so labels cannot inject HTML.
+- **DOMPurify** sanitizes every rendered SVG, including cached SVG re-checked on read.
 
-The three are independent. Any one of them failing should not produce a hole.
+The three are independent; any one of them failing should not open a hole.
 
-## Rendering and caching
+## How it works
 
-Rendering is deterministic given `(source, mermaidVersion, theme, useMaxWidth)`,
-so the editor renders the diagram to SVG once on save — for both light and dark —
-and stores the results in the macro's own config (`svgLight`, `svgDark`, tagged
-with `cacheV`). Each variant is only cached if it is under ~45KB of raw UTF-8,
-since it is persisted verbatim into the page document; an oversized variant is
-dropped so a large diagram still saves.
+**Rendering and caching.** Rendering is deterministic for a given source, version, theme, and width setting, so the editor renders each diagram to SVG once on save — for both light and dark — and stores the result in the macro's configuration. A reader with a cache hit displays that SVG and loads no Mermaid at all. On a cache miss, rendering is deferred behind an `IntersectionObserver` until the macro scrolls into view, so a long page never downloads the renderer for diagrams below the fold.
 
-A reader with a cache hit paints that SVG (re-sanitized, because config is an
-untrusted-input boundary) and **loads no Mermaid at all**. On a cache miss the
-view renders, but only once the macro scrolls into view — the render trigger is
-wrapped in an `IntersectionObserver`, so a long page of cached diagrams never
-downloads the renderer for the ones below the fold.
+**Bundle size.** Mermaid is large, and every macro instance is its own iframe. Merfluence keeps this in check three ways: cached diagrams load no renderer; uncached diagrams load it lazily on scroll; and Mermaid's `mermaid.core` build lazy-loads each diagram type and layout engine on demand. In practice, a page of plain flowcharts downloads roughly 850 KB and defers about 2.3 MB of heavier libraries (Cytoscape, KaTeX, ELK) that load only when a diagram actually needs them. Build assets are content-hashed and served from the Forge CDN with a long-lived, immutable cache policy, so each chunk is fetched once and reused across iframes and reloads.
 
-**The view never writes the cache back.** The cache is populated exactly one way
-— by saving in the editor. A reader that renders on a miss cannot persist the
-result, because the macro view has no scope-free way to write config (Forge
-storage needs a resolver `function`, a content property needs a scope, and this
-app has neither). Diagrams authored before caching existed, or whose SVG exceeded
-the size gate, render on view until someone re-saves them.
+**Version currency.** Mermaid ships breaking changes across major versions, so every diagram carries a version setting: `auto` tracks the current release, or a diagram can pin `11` or `10`. Each major is a separate dynamic import, so a page never downloads a version it doesn't use. A regression corpus (`test/parse.test.js`) runs every fixture through `mermaid.parse()` on each dependency bump to confirm that previously valid syntax still parses — the failure that actually matters — and CI gates version upgrades on that corpus. The exact Mermaid version that rendered a diagram is shown on hover, so bug reports arrive with a version attached.
 
-Note: a Custom UI macro config must submit its fields wrapped as
-`view.submit({ config: fields })`, not the raw object — the host reads
-`payload.config` and otherwise rejects the save with *"Invalid config provided.
-Expected object"*. The saved fields read back from `getContext()` under
-`extension.config`. See `src/lib/host.js`.
+## Limitations
 
-## Mermaid version currency
+**Word export.** Forge macros require an `adfExport` function to appear in Word exports, but adding one currently overrides the high-fidelity PDF renderer with the same limited output ([CONFCLOUD-83083](https://jira.atlassian.com/browse/CONFCLOUD-83083)). Rather than degrade the common case to serve the rare one, Merfluence ships no exporter; use the toolbar's SVG or PNG download instead.
 
-Mermaid ships breaking syntax changes across majors. A diagram written today
-must not become an error banner in three years.
-
-- Every diagram carries a `mermaidVersion` config value. `auto` tracks whatever
-  ships with the current release; a user can pin `11` or `10` if a bump breaks
-  them.
-- Each major is a separate dynamic import (`src/lib/mermaid-registry.js`), so a
-  page that never pins an old version never downloads one.
-- `test/parse.test.js` runs a corpus of fixtures through `mermaid.parse()` on
-  every dependency bump. It does not diff pixels — it checks that syntax
-  customers already wrote still parses, which is the failure that actually
-  matters.
-- `.github/workflows/mermaid-update.yml` gates the bump on that corpus, then
-  deploys to `staging` automatically. Production is a manual promote.
-
-The macro renders `Mermaid 11.x.y` beneath every diagram, so bug reports arrive
-with a version attached.
-
-## Layout
-
-```
-manifest.yml              Forge app descriptor — the security claim lives here
-src/lib/
-  mermaid-registry.js     Lazy per-major loading, version pinning
-  render.js               Initialize + parse + render + sanitize
-  host.js                 @forge/bridge wrappers, theme resolution
-  templates.js            Starter diagrams for the type dropdown
-src/view/                 The macro as readers see it
-src/config/               The editor: CodeMirror, live preview, error gutter
-test/                     Parse-only regression corpus
-```
-
-## Develop
+## Development
 
 ```bash
 npm install
-forge register                  # writes your app id into manifest.yml
-npm run build                   # both bundles -> static/{view,config}/dist
-forge deploy
-forge install                   # onto a free site from go.atlassian.com/cloud-dev
-forge tunnel                    # live reload against your dev site
+forge register                        # writes your app id into manifest.yml
+npm run build                         # builds both bundles into static/{view,config}/dist
+forge deploy -e development
+forge install --product confluence -e development --site your-site.atlassian.net
 ```
 
-`forge lint` will flag manifest problems before deploy does.
+- `npm test` runs the parse-regression corpus.
+- `forge lint` validates the manifest.
+- `forge tunnel` gives live reload against your development site.
 
-## Known rough edges
+Project layout:
 
-**Bundle size.** Mermaid is well north of a megabyte, and every macro instance
-is its own iframe. Three things blunt this. First, a cached diagram loads *no*
-Mermaid at all. Second, on a cache miss the `IntersectionObserver` above means
-Mermaid only loads for macros you actually scroll to. Third, Mermaid 11's
-package resolves the default import to its `mermaid.core` build,
-which lazy-loads each diagram type and layout engine on demand — so we get the
-split for free without calling `registerExternalDiagrams` ourselves. Measured
-against the current build: a page of plain flowcharts downloads ~850KB (core +
-the flowchart chunk) and defers ~2.3MB of heavy libraries (cytoscape, KaTeX,
-elkjs) that only load if a diagram of that type actually renders.
-
-The cost that remains is per-iframe duplication: ten *uncached* diagrams of the
-same type still fetch that ~850KB ten times. Content-hashed filenames let the
-Forge CDN and the browser serve each Mermaid chunk once across iframes and
-reloads, so the second instance is a cache hit rather than a re-download.
-
-**Asset caching (headers to confirm post-deploy).** The Vite build emits
-content-hashed filenames (`mermaid.core-<hash>.js`) into `static/{view,config}/dist`,
-so a chunk's URL changes only when its bytes change — the prerequisite for
-caching it indefinitely. Forge serves these static resources from its CDN. The
-one thing that can only be checked against a live install is the response
-headers. After `forge deploy` + `forge install`, open a diagram, and in
-DevTools → Network (or with curl) inspect a chunk request:
-
-```bash
-curl -sI '<asset-url-copied-from-devtools>' \
-  | grep -iE 'cache-control|etag|age|x-cache|expires|last-modified'
+```
+manifest.yml            Forge descriptor — declares the single inline-styles permission
+src/lib/
+  render.js             Mermaid init, parse, render, and DOMPurify sanitize
+  mermaid-registry.js   Lazy per-major loading and version pinning
+  host.js               @forge/bridge wrappers and theme resolution
+  cache.js              SVG cache shape and size gate
+  mermaid-file.js       Extract Mermaid from dropped .mmd / Markdown files
+  templates.js          Starter diagrams
+src/view/               The macro as readers see it
+src/config/             The editor: CodeMirror, live preview, drag-and-drop
+test/                   Parse-only regression corpus and fixtures
 ```
 
-Observed on the development deploy (2026-07-11), on a chunk served from
-`https://<hash>.cdn.prod.atlassian-dev.net/<app-id>/…`:
+## Contributing
 
-| Header        | Value                                                              |
-| ------------- | ----------------------------------------------------------------- |
-| cache-control | `max-age=1728000, s-maxage=1728000, stale-while-revalidate=86400, immutable` |
-| etag          | `W/"…"` (present)                                                  |
-| x-cache       | `Miss from cloudfront` on first load; `Hit` on subsequent          |
-| content-encoding | `gzip`                                                          |
-
-That is a 20-day, `immutable` policy behind CloudFront. Because the filenames
-are content-hashed, this is exactly what we want: the same Mermaid chunk is
-fetched once and reused across every macro iframe and page reload until its
-bytes (and therefore its URL) change. The Forge runtime's own `global-bridge.js`
-uses a shorter `max-age=86400`.
-
-**Forge surface (verified against `@forge/bridge` 4.5.3).** `src/lib/host.js`
-wraps these; findings as of the pinned bridge:
-
-- `view.resize()` — **not present** on this bridge. Iframe sizing relies
-  entirely on the `width: fit-content` / `min-width:100%` CSS in
-  `src/view/index.html`; the wrapper is a defensive no-op should a later bridge
-  add it.
-- `view.submit(values)` / `view.close()` — confirmed; the custom macro config
-  contract, each taking an optional payload.
-- Dark mode — read from the typed `getContext().theme.colorMode`, not a DOM
-  attribute. `view.theme.enable()` is called on mount so the host injects the
-  `--ds-*` tokens and keeps `data-color-mode` in sync; that attribute is used
-  only as a re-render trigger.
-
-**Line numbers in errors.** Mermaid's older jison grammars expose
-`err.hash.loc.first_line`; the newer langium parsers embed the line in the
-message. `describeError()` handles both and degrades to no line number rather
-than guessing wrong.
+Issues and pull requests are welcome. New diagram types should ship with a fixture in `test/fixtures/`, and the parse corpus must stay green (`npm test`) before changes are merged.
 
 ## License
 
-MIT. Source is public, which the Marketplace requires of open-source listings —
-and which is the only way anyone should believe the claim at the top of this
-file.
+[MIT](LICENSE) © Edward Lopez-Ramos. 
