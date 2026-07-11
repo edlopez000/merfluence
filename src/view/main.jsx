@@ -150,6 +150,10 @@ function Stage({ svg, useMaxWidth }) {
 
   return (
     <>
+      {/* The .stage is a fixed clipping frame in normal flow: it establishes the
+          height (from the untransformed .pan inside it) and clips overflow, so
+          panning never grows the auto-sizing iframe. The transform lives on the
+          inner .pan, which moves within the frame. */}
       <div
         ref={stageRef}
         className={`stage${useMaxWidth ? '' : ' no-shrink'}${drag.current ? ' dragging' : ''}`}
@@ -158,12 +162,16 @@ function Stage({ svg, useMaxWidth }) {
         onPointerMove={handleMove}
         onPointerUp={handleUp}
         onPointerCancel={handleUp}
-        style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: '0 0',
-        }}
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      >
+        <div
+          className="pan"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
+          }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
       <ToolbarPortal
         stageRef={stageRef}
         zoom={zoom}
