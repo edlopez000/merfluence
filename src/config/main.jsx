@@ -47,7 +47,7 @@ const errorLineField = StateField.define({
 /* Editor                                                              */
 /* ------------------------------------------------------------------ */
 
-function Editor({ initialValue, dark, onChange, errorLine }) {
+function Editor({ value, dark, onChange, errorLine }) {
   const host = useRef(null);
   const viewRef = useRef(null);
 
@@ -69,7 +69,7 @@ function Editor({ initialValue, dark, onChange, errorLine }) {
     ];
 
     const view = new EditorView({
-      state: EditorState.create({ doc: initialValue, extensions }),
+      state: EditorState.create({ doc: value, extensions }),
       parent: host.current,
     });
     viewRef.current = view;
@@ -79,6 +79,18 @@ function Editor({ initialValue, dark, onChange, errorLine }) {
     // Rebuilt on theme flip; the doc is re-seeded from the latest value below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dark]);
+
+  // Push external value changes (e.g. picking a "Start from" template) into the
+  // document. When the change originated from typing, `value` already equals the
+  // doc, so this no-ops — no cursor jump, no feedback loop with onChange.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== value) {
+      view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+    }
+  }, [value]);
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setErrorLine.of(errorLine) });
@@ -216,7 +228,7 @@ function Panel({ initial }) {
         <div className="pane">
           <div className="pane-title">Mermaid source</div>
           <Editor
-            initialValue={source}
+            value={source}
             dark={dark}
             onChange={setSource}
             errorLine={preview.status === 'error' ? preview.line : null}
