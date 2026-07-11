@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
@@ -13,6 +13,7 @@ import { renderDiagram, describeError } from '../lib/render.js';
 import { VERSION_OPTIONS } from '../lib/mermaid-registry.js';
 import { TEMPLATES, DEFAULT_SOURCE } from '../lib/templates.js';
 import { buildCacheFields, CACHE_VERSION } from '../lib/cache.js';
+import { extractMermaidSource } from '../lib/mermaid-file.js';
 import { closeConfig, enableTheme, getConfig, resolveTheme, submitConfig } from '../lib/host.js';
 
 const DEBOUNCE_MS = 300;
@@ -47,7 +48,7 @@ const errorLineField = StateField.define({
 /* Editor                                                              */
 /* ------------------------------------------------------------------ */
 
-function Editor({ value, dark, onChange, errorLine }) {
+function Editor({ value, dark, onChange, onDropFile, errorLine }) {
   const host = useRef(null);
   const viewRef = useRef(null);
 
@@ -64,6 +65,25 @@ function Editor({ value, dark, onChange, errorLine }) {
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChange(update.state.doc.toString());
+      }),
+      // Drag-and-drop a .mmd or .md file onto the editor to load it. Handled
+      // here (not on a React wrapper) so it intercepts before CodeMirror's own
+      // text-drop. Non-file drops fall through to CodeMirror's default.
+      EditorView.domEventHandlers({
+        dragover(event) {
+          if (event.dataTransfer?.types?.includes('Files')) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        },
+        drop(event) {
+          const file = event.dataTransfer?.files?.[0];
+          if (!file) return false;
+          event.preventDefault();
+          onDropFile?.(file);
+          return true;
+        },
       }),
       ...(dark ? [oneDark] : []),
     ];
@@ -110,11 +130,32 @@ function Panel({ initial }) {
   const [useMaxWidth, setUseMaxWidth] = useState(initial.useMaxWidth !== false);
 
   const [preview, setPreview] = useState({ status: 'idle' });
+  const [dropError, setDropError] = useState(null);
   const dark = useMemo(() => resolveTheme(theme) === 'dark', [theme]);
+
+  // Load a .mmd or .md file dropped onto the editor. Reading and parsing happen
+  // in the browser; nothing is uploaded.
+  const onDropFile = useCallback(async (file) => {
+    setDropError(null);
+    try {
+      const text = await file.text();
+      const result = extractMermaidSource(text, file.name);
+      if (result.error) {
+        setDropError(result.error);
+      } else if (result.source.trim()) {
+        setSource(result.source);
+      } else {
+        setDropError('That file has no Mermaid content.');
+      }
+    } catch {
+      setDropError('Could not read that file.');
+    }
+  }, []);
 
   // Live preview. Debounced, and stale results are discarded — typing fast
   // must never leave you looking at the diagram from three keystrokes ago.
   useEffect(() => {
+    setDropError(null); // any source/setting change supersedes a drop error
     let cancelled = false;
     const timer = setTimeout(async () => {
       if (!source.trim()) {
@@ -226,11 +267,15 @@ function Panel({ initial }) {
 
       <div className="split">
         <div className="pane">
-          <div className="pane-title">Mermaid source</div>
+          <div className="pane-title">
+            Mermaid source
+            <span className="hint"> · or drop a .mmd / .md file</span>
+          </div>
           <Editor
             value={source}
             dark={dark}
             onChange={setSource}
+            onDropFile={onDropFile}
             errorLine={preview.status === 'error' ? preview.line : null}
           />
         </div>
@@ -247,7 +292,11 @@ function Panel({ initial }) {
         </div>
       </div>
 
-      {preview.status === 'error' ? (
+      {dropError ? (
+        <div className="diagnostic" role="alert">
+          <code>{dropError}</code>
+        </div>
+      ) : preview.status === 'error' ? (
         <div className="diagnostic" role="alert">
           {preview.line ? (
             <>
