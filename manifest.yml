@@ -1,0 +1,49 @@
+modules:
+  macro:
+    - key: mermaid-diagram
+      title: Mermaid diagram
+      description: Diagrams as code. Rendered in your browser, never sent anywhere.
+      resource: main
+      # Diagrams are block-level content: own line, full available width (the
+      # view sizes itself with fit-content / min-width:100%). 'default' is not a
+      # valid layout value; allowed values are inline | block | bodied.
+      layout: block
+      categories:
+        - visuals-and-images
+        - development
+      unlicensedAccess:
+        - unlicensed
+        - anonymous
+      config:
+        resource: config
+        title: Edit diagram
+        openOnInsert: true
+        viewportSize: xlarge
+
+resources:
+  - key: main
+    path: static/view/dist
+  - key: config
+    path: static/config/dist
+
+app:
+  id: ari:cloud:ecosystem::app/5321c3d1-955d-42ac-9f09-d4d6f0802224
+  runtime:
+    name: nodejs24.x
+
+permissions:
+  # ---------------------------------------------------------------------
+  # THIS BLOCK IS THE PRODUCT.
+  #
+  #   scopes:   absent. The app never calls a Confluence REST API.
+  #   external: absent. The app never contacts a host outside Atlassian.
+  #   function: absent. The app has no backend; there is nowhere for data
+  #             to go, even by accident.
+  #
+  # The only declared permission is inline styles, which Mermaid requires
+  # because it writes style="" attributes onto the SVG it generates.
+  # Styles only. Never scripts. Never unsafe-eval.
+  # ---------------------------------------------------------------------
+  content:
+    styles:
+      - 'unsafe-inline'

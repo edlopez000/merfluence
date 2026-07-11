@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mermaid diagram</title>
+    <style>
+      /* Sizes the body to its content instead of the iframe's default width.
+         Declared in a <style> tag, not a style="" attribute, so this alone
+         would not require the unsafe-inline permission — Mermaid's own output
+         is what requires it. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: fit-content;
+        min-width: 100%;
+        background: transparent;
+        font-family: var(
+          --ds-font-family-sans,
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          sans-serif
+        );
+        color: var(--ds-text, #172b4d);
+      }
+
+      .root {
+        position: relative;
+        display: inline-block;
+        min-width: 100%;
+      }
+
+      .stage {
+        overflow: hidden;
+        cursor: grab;
+      }
+      .stage.dragging {
+        cursor: grabbing;
+      }
+      .stage svg {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      .stage.no-shrink svg {
+        max-width: none;
+      }
+
+      .toolbar {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        display: flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: 6px;
+        background: var(--ds-surface-overlay, #fff);
+        border: 1px solid var(--ds-border, #dfe1e6);
+        opacity: 0;
+        transition: opacity 120ms ease-in;
+      }
+      .root:hover .toolbar,
+      .toolbar:focus-within {
+        opacity: 1;
+      }
+
+      .toolbar button {
+        appearance: none;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--ds-text-subtle, #44546f);
+        font: inherit;
+        font-size: 12px;
+        line-height: 1;
+        padding: 6px 8px;
+        cursor: pointer;
+      }
+      .toolbar button:hover {
+        background: var(--ds-background-neutral-subtle-hovered, #f1f2f4);
+      }
+      .toolbar button:focus-visible {
+        outline: 2px solid var(--ds-border-focused, #388bff);
+        outline-offset: 1px;
+      }
+
+      .meta {
+        font-size: 11px;
+        color: var(--ds-text-subtlest, #626f86);
+        padding: 2px 0 0;
+      }
+
+      .message {
+        padding: 12px 14px;
+        border-radius: 4px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .message.empty {
+        border: 1px dashed var(--ds-border, #dfe1e6);
+        color: var(--ds-text-subtle, #44546f);
+      }
+      .message.error {
+        border-left: 3px solid var(--ds-border-danger, #c9372c);
+        border-radius: 0;
+        background: var(--ds-background-danger, #ffedeb);
+        color: var(--ds-text-danger, #ae2e24);
+      }
+      .message pre {
+        margin: 6px 0 0;
+        font-family: var(--ds-font-family-code, ui-monospace, monospace);
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .toolbar {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.jsx"></script>
+  </body>
+</html>

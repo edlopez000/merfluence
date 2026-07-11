@@ -1,0 +1,8 @@
+sequenceDiagram
+  participant Client
+  participant API
+  participant DB
+  Client->>API: POST /orders
+  API->>DB: INSERT
+  DB-->>API: order_id
+  API-->>Client: 201 Created

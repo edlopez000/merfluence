@@ -1,0 +1,6 @@
+flowchart TD
+  A[Request] --> B{Authorized?}
+  B -- Yes --> C[Handle]
+  B -- No --> D[Reject]
+  C --> E[Respond]
+  D --> E

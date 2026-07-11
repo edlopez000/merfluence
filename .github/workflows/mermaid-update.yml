@@ -1,0 +1,97 @@
+name: Mermaid update
+
+# Version currency, automated. Renovate/Dependabot opens the bump PR; this
+# workflow decides whether it is safe. A clean corpus means the syntax our
+# customers already wrote still parses, so the bump ships to staging with no
+# human in the loop. Marketplace minor updates do not require re-approval —
+# they trigger a vulnerability scan that closes on its own — so upstream
+# release to customer browsers is under an hour.
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  corpus:
+    name: Diagram corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Every fixture still parses
+        run: npm test
+      - name: Both bundles build
+        run: npm run build
+      - name: Report resolved versions
+        run: |
+          echo "### Mermaid versions" >> "$GITHUB_STEP_SUMMARY"
+          node -p "'auto/11 -> ' + require('./node_modules/mermaid/package.json').version" >> "$GITHUB_STEP_SUMMARY"
+          node -p "'pinned 10 -> ' + require('./node_modules/mermaid-10/package.json').version" >> "$GITHUB_STEP_SUMMARY"
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Critical or high findings block the Marketplace update anyway.
+      # Better to learn it here than from an AMS ticket.
+      - run: npm audit --audit-level=high
+
+  staging:
+    name: Deploy to staging
+    needs: [corpus, audit]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install -g @forge/cli@latest
+      - run: npm run build
+      - name: forge deploy
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: forge deploy -e staging --non-interactive
+
+  # Production is deliberately manual. Staging soaks first.
+  production:
+    name: Promote to production
+    needs: [staging]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install -g @forge/cli@latest
+      - run: npm run build
+      - name: forge deploy
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: forge deploy -e production --non-interactive

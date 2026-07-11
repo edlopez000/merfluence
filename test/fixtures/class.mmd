@@ -1,0 +1,11 @@
+classDiagram
+  class Facility {
+    +int id
+    +string name
+    +listWorkOrders()
+  }
+  class WorkOrder {
+    +int id
+    +string status
+  }
+  Facility "1" --> "*" WorkOrder
