@@ -52,14 +52,13 @@ Build: two Vite bundles → `static/{view,config}/dist`. Test: `vitest run`
 iframe root). `width: fit-content` CSS is the resize fallback. Flag anything
 unverifiable so the user checks live docs.
 
-**1. Cache rendered SVG in macro config.** ~~On save, persist `{ svgLight, svgDark }`
-into config…~~ **REMOVED 2026-07-11 by choice.** Config now holds only `source`,
-`mermaidVersion`, `theme`, `useMaxWidth`; lazy render (step 2) is the surviving
-optimization. (The live save failure that prompted the revert turned out to be a
-missing `{ config: ... }` wrapper in `view.submit`, not config size — that bug is
-fixed separately in `src/lib/host.js`. The SVG cache could technically work now,
-but the proper store for derived blobs still needs a resolver/scope the invariant
-forbids, so it stays out.)
+**1. Cache rendered SVG in macro config.** On save, persist `{ svgLight, svgDark }`
+into config alongside `source`, `mermaidVersion`, `theme`, `useMaxWidth`. Gate on
+size: only cache if each string is < ~45KB (dropped otherwise so the save still
+succeeds). Add `cacheV: 1`. Reader view injects cached SVG (re-sanitized) for the
+resolved theme and loads **zero Mermaid** on a hit. **Done** (`src/lib/cache.js`).
+Note: the save failure seen during testing was a missing `{ config: ... }` wrapper
+in `view.submit` (fixed in `src/lib/host.js`), not config size.
 
 **2. Lazy render on cache miss.** In the view, wrap the render trigger in an
 `IntersectionObserver` so Mermaid loads only when the macro scrolls into view. On

@@ -49,29 +49,33 @@ everyone who can read it. That is an untrusted-input boundary, so:
 
 The three are independent. Any one of them failing should not produce a hole.
 
-## Rendering
+## Rendering and caching
 
-Only the diagram source and its display settings live in macro config
-(`source`, `mermaidVersion`, `theme`, `useMaxWidth`) — all small. The SVG is
-rendered fresh in the reader's browser, and to keep a long page cheap that
-render is deferred: the trigger is wrapped in an `IntersectionObserver`, so
-Mermaid only loads for a macro once it scrolls near the viewport. Diagrams above
-the fold render immediately; the rest cost nothing until you reach them.
+Rendering is deterministic given `(source, mermaidVersion, theme, useMaxWidth)`,
+so the editor renders the diagram to SVG once on save — for both light and dark —
+and stores the results in the macro's own config (`svgLight`, `svgDark`, tagged
+with `cacheV`). Each variant is only cached if it is under ~45KB of raw UTF-8,
+since it is persisted verbatim into the page document; an oversized variant is
+dropped so a large diagram still saves.
 
-**Why the rendered SVG is not cached in config.** Caching the SVG would let a
-reader skip Mermaid entirely, and it was tried, but the right home for bulky
-derived data is Forge storage or a content property — and each needs a resolver
-`function` or a scope this app deliberately does not have. Macro config is the
-only scope-free store, but it lives in the page's ADF and is meant for small
-values, not tens of KB of markup per diagram. So the diagram is re-rendered on
-view rather than cached. (If it ever becomes a bottleneck, gzip-compressing the
-SVG with the browser-native `CompressionStream` — no dependency, no scope —
-could shrink it enough to reconsider; it was not needed here.)
+A reader with a cache hit paints that SVG (re-sanitized, because config is an
+untrusted-input boundary) and **loads no Mermaid at all**. On a cache miss the
+view renders, but only once the macro scrolls into view — the render trigger is
+wrapped in an `IntersectionObserver`, so a long page of cached diagrams never
+downloads the renderer for the ones below the fold.
+
+**The view never writes the cache back.** The cache is populated exactly one way
+— by saving in the editor. A reader that renders on a miss cannot persist the
+result, because the macro view has no scope-free way to write config (Forge
+storage needs a resolver `function`, a content property needs a scope, and this
+app has neither). Diagrams authored before caching existed, or whose SVG exceeded
+the size gate, render on view until someone re-saves them.
 
 Note: a Custom UI macro config must submit its fields wrapped as
 `view.submit({ config: fields })`, not the raw object — the host reads
 `payload.config` and otherwise rejects the save with *"Invalid config provided.
-Expected object"*. See `src/lib/host.js`.
+Expected object"*. The saved fields read back from `getContext()` under
+`extension.config`. See `src/lib/host.js`.
 
 ## Mermaid version currency
 
@@ -123,9 +127,10 @@ forge tunnel                    # live reload against your dev site
 ## Known rough edges
 
 **Bundle size.** Mermaid is well north of a megabyte, and every macro instance
-is its own iframe. Two things blunt this. First, the `IntersectionObserver`
-above means Mermaid only loads for macros you actually scroll to. Second,
-Mermaid 11's package resolves the default import to its `mermaid.core` build,
+is its own iframe. Three things blunt this. First, a cached diagram loads *no*
+Mermaid at all. Second, on a cache miss the `IntersectionObserver` above means
+Mermaid only loads for macros you actually scroll to. Third, Mermaid 11's
+package resolves the default import to its `mermaid.core` build,
 which lazy-loads each diagram type and layout engine on demand — so we get the
 split for free without calling `registerExternalDiagrams` ourselves. Measured
 against the current build: a page of plain flowcharts downloads ~850KB (core +

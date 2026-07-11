@@ -12,6 +12,7 @@ import { mermaid as mermaidLang } from './mermaid-lang.js';
 import { renderDiagram, describeError } from '../lib/render.js';
 import { VERSION_OPTIONS } from '../lib/mermaid-registry.js';
 import { TEMPLATES, DEFAULT_SOURCE } from '../lib/templates.js';
+import { buildCacheFields, CACHE_VERSION } from '../lib/cache.js';
 import { closeConfig, enableTheme, getConfig, resolveTheme, submitConfig } from '../lib/host.js';
 
 const DEBOUNCE_MS = 300;
@@ -132,12 +133,29 @@ function Panel({ initial }) {
     if (template) setSource(template.source);
   };
 
-  // Persist only the source and display settings. We do NOT store the rendered
-  // SVG here: it is tens of KB and macro config lives in the page's ADF, which
-  // is size-limited — a large config makes view.submit reject the save outright.
-  // The scope-free stores that could hold it (Forge storage, content properties)
-  // need a resolver or a scope, which this app deliberately does not have.
-  const save = () => submitConfig({ source, mermaidVersion, theme, useMaxWidth });
+  // On save, render the diagram to SVG for both light and dark and stash the
+  // results in config so readers paint without loading Mermaid. Rendering is
+  // deterministic and the source is already known-valid (save is gated on a
+  // successful preview), but the cache must never block a save: if a render
+  // throws, persist the source alone and let readers render on view. Oversized
+  // variants are dropped by buildCacheFields so a big diagram still saves.
+  //
+  // These two renders MUST be sequential, not Promise.all: Mermaid is a global
+  // singleton whose theme is set by initialize(). Run in parallel, the two
+  // initialize() calls race and the last one wins, so both SVGs come out in the
+  // same theme. Awaiting one full render before starting the next keeps them
+  // distinct.
+  const save = async () => {
+    let cacheFields = { cacheV: CACHE_VERSION };
+    try {
+      const light = await renderDiagram({ source, versionPref: mermaidVersion, theme: 'light', useMaxWidth });
+      const dark = await renderDiagram({ source, versionPref: mermaidVersion, theme: 'dark', useMaxWidth });
+      cacheFields = buildCacheFields(light.svg, dark.svg);
+    } catch {
+      cacheFields = { cacheV: CACHE_VERSION };
+    }
+    await submitConfig({ source, mermaidVersion, theme, useMaxWidth, ...cacheFields });
+  };
 
   const valid = preview.status === 'ready';
 

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { renderDiagram, describeError } from '../lib/render.js';
+import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { resolvedVersion } from '../lib/mermaid-registry.js';
 import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
+import { pickCachedSvg } from '../lib/cache.js';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
@@ -198,15 +199,27 @@ function App() {
       .catch(() => setConfig({}));
   }, []);
 
-  // Decide what to show *without* loading Mermaid. An empty diagram resolves
-  // here for free; anything else becomes 'deferred' so the expensive render
-  // waits until the macro actually scrolls into view.
+  // Decide what to show *without* loading Mermaid. Empty and cache hits resolve
+  // here for free; a cache miss becomes 'deferred' so the expensive render waits
+  // until the macro actually scrolls into view.
   const decide = useCallback(() => {
     if (!config) return;
 
     const source = (config.source ?? '').trim();
     if (!source) {
       setState({ status: 'empty' });
+      return;
+    }
+
+    const theme = resolveTheme(config.theme);
+
+    // Cache hit: the editor already rendered this diagram to SVG for this theme
+    // and stored it in config. Paint it and never load Mermaid — the whole win.
+    // Re-sanitize: this SVG comes from macro config, which anyone who can edit
+    // the page can author, so it gets the same DOMPurify pass a fresh render does.
+    const cached = pickCachedSvg(config, theme);
+    if (cached) {
+      setState({ status: 'ready', svg: sanitizeSvg(cached) });
       return;
     }
 
@@ -245,10 +258,10 @@ function App() {
   }, [state.status]);
 
   // Render once the deferred macro is on screen. This is the only path that
-  // loads Mermaid. We do not persist the result: macro config is size-limited
-  // (a rendered SVG overflows it and breaks view.submit), and the scope-free
-  // stores that could hold it need a resolver or a scope this app forbids. So
-  // every uncached view renders fresh — see "Rendering" in the README.
+  // loads Mermaid. We do not write the result back into config here: the macro
+  // view has no scope-free way to persist config (that needs a resolver or a
+  // scope the app forbids), so the cache is populated only by saving in the
+  // editor. An uncached diagram renders fresh on every view.
   useEffect(() => {
     if (state.status !== 'deferred' || !visible || !config) return;
     let cancelled = false;
