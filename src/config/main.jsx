@@ -48,7 +48,7 @@ const errorLineField = StateField.define({
 /* Editor                                                              */
 /* ------------------------------------------------------------------ */
 
-function Editor({ value, dark, onChange, onDropFile, errorLine }) {
+function Editor({ value, dark, onChange, errorLine }) {
   const host = useRef(null);
   const viewRef = useRef(null);
 
@@ -65,25 +65,6 @@ function Editor({ value, dark, onChange, onDropFile, errorLine }) {
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChange(update.state.doc.toString());
-      }),
-      // Drag-and-drop a .mmd or .md file onto the editor to load it. Handled
-      // here (not on a React wrapper) so it intercepts before CodeMirror's own
-      // text-drop. Non-file drops fall through to CodeMirror's default.
-      EditorView.domEventHandlers({
-        dragover(event) {
-          if (event.dataTransfer?.types?.includes('Files')) {
-            event.preventDefault();
-            return true;
-          }
-          return false;
-        },
-        drop(event) {
-          const file = event.dataTransfer?.files?.[0];
-          if (!file) return false;
-          event.preventDefault();
-          onDropFile?.(file);
-          return true;
-        },
       }),
       ...(dark ? [oneDark] : []),
     ];
@@ -131,6 +112,7 @@ function Panel({ initial }) {
 
   const [preview, setPreview] = useState({ status: 'idle' });
   const [dropError, setDropError] = useState(null);
+  const [dragging, setDragging] = useState(false);
   const dark = useMemo(() => resolveTheme(theme) === 'dark', [theme]);
 
   // Load a .mmd or .md file dropped onto the editor. Reading and parsing happen
@@ -151,6 +133,55 @@ function Panel({ initial }) {
       setDropError('Could not read that file.');
     }
   }, []);
+
+  // Make the whole modal a file drop zone. Document-level capture listeners are
+  // used (not React handlers on the panel) for three reasons: dragover must call
+  // preventDefault on EVERY move or the browser just opens the file; a depth
+  // counter tracks enter/leave reliably across nested elements and repeated
+  // drag-in/out cycles; and capture runs before CodeMirror's own drop handling.
+  // Only file drags are intercepted, so dragging text inside the editor still
+  // works. Everything is read in-browser — nothing is uploaded.
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+
+    const onEnter = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setDragging(true);
+    };
+    const onOver = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    };
+    const onLeave = (e) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    const onDropEvt = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      depth = 0;
+      setDragging(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (file) onDropFile(file);
+    };
+
+    window.addEventListener('dragenter', onEnter, true);
+    window.addEventListener('dragover', onOver, true);
+    window.addEventListener('dragleave', onLeave, true);
+    window.addEventListener('drop', onDropEvt, true);
+    return () => {
+      window.removeEventListener('dragenter', onEnter, true);
+      window.removeEventListener('dragover', onOver, true);
+      window.removeEventListener('dragleave', onLeave, true);
+      window.removeEventListener('drop', onDropEvt, true);
+    };
+  }, [onDropFile]);
 
   // Live preview. Debounced, and stale results are discarded — typing fast
   // must never leave you looking at the diagram from three keystrokes ago.
@@ -214,6 +245,17 @@ function Panel({ initial }) {
 
   return (
     <div className="panel">
+      {dragging && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-inner">
+            <strong>Drop to load your diagram</strong>
+            <span>
+              The file is read here in your browser and turned into the diagram —
+              it isn&rsquo;t opened or uploaded anywhere.
+            </span>
+          </div>
+        </div>
+      )}
       <div className="controls">
         <label>
           Start from
@@ -275,7 +317,6 @@ function Panel({ initial }) {
             value={source}
             dark={dark}
             onChange={setSource}
-            onDropFile={onDropFile}
             errorLine={preview.status === 'error' ? preview.line : null}
           />
         </div>
@@ -306,9 +347,7 @@ function Panel({ initial }) {
             <code>{preview.message}</code>
           )}
         </div>
-      ) : (
-        <div className="diagnostic ok">Diagram renders. Nothing left this browser.</div>
-      )}
+      ) : null}
 
       <div className="actions">
         <button type="button" onClick={closeConfig}>
