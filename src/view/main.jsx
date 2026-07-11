@@ -128,6 +128,7 @@ function Stage({ svg, useMaxWidth }) {
   const clamp = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
   const onWheel = useCallback((event) => {
+    if (document.fullscreenElement) return; // fullscreen is a fixed fit-to-screen view
     if (!event.ctrlKey && !event.metaKey) return; // let the page scroll
     event.preventDefault();
     setZoom((z) => clamp(z - event.deltaY * 0.002));
@@ -143,6 +144,9 @@ function Stage({ svg, useMaxWidth }) {
   };
 
   const handleDown = (event) => {
+    // In fullscreen the diagram is a fixed, centred fit-to-screen view. Panning
+    // there would silently move the diagram once you exit, so it's disabled.
+    if (document.fullscreenElement) return;
     drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -174,6 +178,17 @@ function Stage({ svg, useMaxWidth }) {
           }}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
+        {/* Lives inside .stage so it's part of the fullscreen element (the
+            toolbar is a sibling and hidden in fullscreen). CSS shows it only
+            when fullscreen. */}
+        <button
+          type="button"
+          className="fs-exit"
+          onClick={() => document.exitFullscreen?.()}
+          aria-label="Exit fullscreen"
+        >
+          Exit fullscreen
+        </button>
       </div>
       <ToolbarPortal
         stageRef={stageRef}

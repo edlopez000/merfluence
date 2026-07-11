@@ -37,6 +37,10 @@
       .stage {
         overflow: hidden;
         cursor: grab;
+        /* Dragging pans the diagram; without this the drag selects the SVG's
+           text labels instead. Source text is available via "Copy source". */
+        user-select: none;
+        -webkit-user-select: none;
       }
       .stage.dragging {
         cursor: grabbing;
@@ -59,6 +63,61 @@
       }
       .stage.no-shrink svg {
         max-width: none;
+      }
+
+      /* Fullscreen: ignore the interactive pan/zoom and fit the diagram to the
+         screen, centred. We hand the SVG the full padded box; its viewBox plus
+         the default preserveAspectRatio ("xMidYMid meet") does the scale-to-fit
+         and centring, scaling small diagrams up (crisp, since it's vector) and
+         large ones down. Exit with Esc. */
+      .stage:fullscreen {
+        background: var(--ds-surface, #fff);
+        padding: 24px;
+        box-sizing: border-box;
+        cursor: default;
+      }
+      .stage:fullscreen .pan {
+        transform: none !important;
+        width: 100%;
+        height: 100%;
+        max-width: none;
+        margin: 0;
+      }
+      .stage:fullscreen svg {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+      }
+
+      /* Exit control, only visible in fullscreen (the toolbar is hidden there). */
+      .fs-exit {
+        display: none;
+      }
+      .stage:fullscreen .fs-exit {
+        display: inline-flex;
+        align-items: center;
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 1;
+        appearance: none;
+        border: 1px solid var(--ds-border, #dfe1e6);
+        border-radius: 6px;
+        background: var(--ds-surface-overlay, #fff);
+        color: var(--ds-text, #172b4d);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      .stage:fullscreen .fs-exit:hover {
+        background: var(--ds-background-neutral-subtle-hovered, #f1f2f4);
+      }
+      .stage:fullscreen .fs-exit:focus-visible {
+        outline: 2px solid var(--ds-border-focused, #388bff);
+        outline-offset: 1px;
       }
 
       .toolbar {
