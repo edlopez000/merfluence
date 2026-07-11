@@ -102,14 +102,17 @@ function Toolbar({ stageRef, source, onZoom, onReset, zoom }) {
       <button type="button" onClick={() => onZoom(-0.2)} aria-label="Zoom out">
         &minus;
       </button>
-      <span className="zoom-level" aria-hidden="true">
+      <button
+        type="button"
+        className="zoom-level"
+        onClick={onReset}
+        title="Reset view"
+        aria-label="Reset view"
+      >
         {Math.round(zoom * 100)}%
-      </span>
+      </button>
       <button type="button" onClick={() => onZoom(0.2)} aria-label="Zoom in">
         +
-      </button>
-      <button type="button" onClick={onReset}>
-        Reset view
       </button>
       <button type="button" onClick={fullscreen}>
         Fullscreen

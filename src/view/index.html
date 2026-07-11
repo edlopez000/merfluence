@@ -157,16 +157,15 @@
         outline: 2px solid var(--ds-border-focused, #388bff);
         outline-offset: 1px;
       }
+      /* The zoom percentage doubles as the "reset view" control (click to reset
+         zoom + pan). It inherits .toolbar button styling, including hover. */
       .toolbar .zoom-level {
         display: flex;
         align-items: center;
-        padding: 0 4px;
-        font-size: 12px;
-        line-height: 1;
-        color: var(--ds-text-subtlest, #626f86);
-        font-variant-numeric: tabular-nums;
-        min-width: 3.5ch;
         justify-content: center;
+        padding: 6px 6px;
+        font-variant-numeric: tabular-nums;
+        min-width: 4ch;
       }
 
       /* Version stamp: overlaid bottom-left and revealed on hover, like the
