@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Merfluence logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E0F2FE"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#0B1220" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- app tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <!-- subtle top-light sheen -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#FFFFFF" opacity="0.06"/>
+
+  <!-- diagram: edges + nodes tracing an "M" / wave -->
+  <g filter="url(#soft)">
+    <path d="M145 350 L200 185 L256 285 L312 185 L367 350"
+          fill="none" stroke="url(#edge)" stroke-width="18"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="145" cy="350" r="30" fill="#FFFFFF"/>
+    <circle cx="256" cy="285" r="30" fill="#FFFFFF"/>
+    <circle cx="367" cy="350" r="30" fill="#FFFFFF"/>
+    <circle cx="200" cy="185" r="30" fill="#FFFFFF"/>
+    <circle cx="312" cy="185" r="30" fill="#FFFFFF"/>
+    <!-- accent dots on the two peaks, echoing the gradient -->
+    <circle cx="200" cy="185" r="12" fill="#14B8A6"/>
+    <circle cx="312" cy="185" r="12" fill="#2563EB"/>
+  </g>
+</svg>

@@ -2,7 +2,7 @@
   "name": "merfluence",
   "version": "1.0.0",
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "build:view": "vite build --config vite.view.config.js",

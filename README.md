@@ -2,7 +2,7 @@
 
 > Diagrams as code for Confluence Cloud. Write [Mermaid](https://mermaid.js.org/), get a rendered diagram — entirely in your browser, with nothing sent anywhere.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Built on Atlassian Forge](https://img.shields.io/badge/Built%20on-Atlassian%20Forge-0052CC)
 ![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D)
 
@@ -14,7 +14,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 - **Client-side rendering** — diagrams are generated with Mermaid and sanitized with DOMPurify before display.
 - **Fast on large pages** — rendered diagrams are cached in the macro, and uncached diagrams render lazily as they scroll into view.
 - **Version-stable** — pin a Mermaid major version per diagram, so existing diagrams don't break when Mermaid ships changes.
-- **Free and open source** — MIT licensed, with public source so the privacy claims are verifiable.
+- **Free and open source** — Apache 2.0 licensed, with public source so the privacy claims are verifiable.
 
 ## Features
 
@@ -115,4 +115,4 @@ Issues and pull requests are welcome. New diagram types should ship with a fixtu
 
 ## License
 
-[MIT](LICENSE) © Edward Lopez-Ramos. 
+[Apache 2.0](LICENSE) © Edward Lopez-Ramos. 
