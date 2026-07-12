@@ -76,6 +76,9 @@ jobs:
       - run: npm ci
       - run: npm install -g @forge/cli@latest
       - run: npm run build
+      # --non-interactive can't prompt for the analytics choice, so set it
+      # explicitly on the fresh runner before deploying. Opt out.
+      - run: forge settings set usage-analytics false
       - name: forge deploy
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
@@ -100,6 +103,9 @@ jobs:
       - run: npm ci
       - run: npm install -g @forge/cli@latest
       - run: npm run build
+      # --non-interactive can't prompt for the analytics choice, so set it
+      # explicitly on the fresh runner before deploying. Opt out.
+      - run: forge settings set usage-analytics false
       - name: forge deploy
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
