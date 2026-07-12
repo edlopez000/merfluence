@@ -1,17 +1,16 @@
 name: Mermaid update
 
-# Version currency, automated. Renovate/Dependabot opens the bump PR; this
-# workflow decides whether it is safe. A clean corpus means the syntax our
-# customers already wrote still parses, so the bump ships to staging with no
-# human in the loop. Marketplace minor updates do not require re-approval —
-# they trigger a vulnerability scan that closes on its own — so upstream
-# release to customer browsers is under an hour.
+# CI gate + version currency. Every PR runs the corpus and audit, so nothing
+# merges to main untested (this also covers the Renovate/Dependabot bump PRs).
+# A clean corpus means the syntax our customers already wrote still parses, so
+# a merge ships to staging with no human in the loop. Marketplace minor updates
+# do not require re-approval — they trigger a vulnerability scan that closes on
+# its own — so upstream release to customer browsers is under an hour.
 
 on:
+  # No paths filter: every PR gets the full test + audit gate, not just
+  # dependency bumps. Deploy jobs stay gated on push-to-main, so PRs never ship.
   pull_request:
-    paths:
-      - 'package.json'
-      - 'package-lock.json'
   push:
     branches: [main]
   schedule:
@@ -85,7 +84,10 @@ jobs:
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: forge deploy -e staging --non-interactive
 
-  # Production is deliberately manual. Staging soaks first.
+  # Production soaks in staging first, then this job runs — but the pause for a
+  # human is NOT in this file: it comes from a required-reviewer rule on the
+  # `production` GitHub Environment (Settings → Environments → production).
+  # Without that rule configured, this promotes automatically after staging.
   production:
     name: Promote to production
     needs: [staging]
