@@ -50,8 +50,10 @@ jobs:
           cache: npm
       - run: npm ci
       # Critical or high findings block the Marketplace update anyway.
-      # Better to learn it here than from an AMS ticket.
-      - run: npm audit --audit-level=high
+      # Better to learn it here than from an AMS ticket. Scope to prod deps:
+      # only the runtime bundle ships to customer browsers, and dev-server
+      # tooling (vitest/vite/esbuild) can't reach the deployed Forge artifact.
+      - run: npm audit --omit=dev --audit-level=high
 
   staging:
     name: Deploy to staging
