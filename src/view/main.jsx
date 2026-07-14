@@ -6,9 +6,7 @@ import { resolvedVersion } from '../lib/mermaid-registry.js';
 import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
 import { pickCachedSvg } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
-
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 4;
+import { anchoredZoom } from '../lib/zoom.js';
 
 function download(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -177,8 +175,6 @@ function Stage({ svg, useMaxWidth, height }) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef(null);
 
-  const clamp = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
-
   // The wheel/fullscreen listeners below are bound once, so they'd close over
   // the initial state. These refs hand them the current values.
   const zoomRef = useRef(zoom);
@@ -192,18 +188,20 @@ function Stage({ svg, useMaxWidth, height }) {
   // its top-left, so its live on-screen rect is the reference; that rect already
   // includes the margin-auto centring, so the offset cancels out.
   const zoomTo = (nextZoom, anchorX, anchorY) => {
-    const oldZoom = zoomRef.current;
-    const newZoom = clamp(nextZoom);
-    if (newZoom === oldZoom) return; // at a clamp bound; nothing to do
     const panRect = stageRef.current?.querySelector('.pan')?.getBoundingClientRect();
-    const shift = 1 - newZoom / oldZoom;
-    setZoom(newZoom);
-    if (panRect) {
-      setPan((p) => ({
-        x: p.x + (anchorX - panRect.left) * shift,
-        y: p.y + (anchorY - panRect.top) * shift,
-      }));
-    }
+    if (!panRect) return;
+    const next = anchoredZoom({
+      oldZoom: zoomRef.current,
+      nextZoom,
+      pan: panRef.current,
+      anchorX,
+      anchorY,
+      panLeft: panRect.left,
+      panTop: panRect.top,
+    });
+    if (!next) return; // at a clamp bound; nothing to do
+    setZoom(next.zoom);
+    setPan(next.pan);
   };
 
   // Fullscreen reuses the inline pan/zoom, so we snapshot the view on enter and

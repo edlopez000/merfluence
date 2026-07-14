@@ -24,7 +24,8 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 - A live editor with syntax highlighting, starter templates, and inline error reporting
 - Drag and drop a `.mmd` file, or a Markdown file containing a ` ```mermaid ` block, straight onto the editor
 - Automatic light/dark theming that follows Confluence
-- Pan, zoom, fullscreen, and one-click export to SVG or PNG
+- A per-diagram display size (Small, Medium, or Large), or the diagram's natural size
+- Pan, zoom, and fullscreen navigation, with export to SVG or PNG
 - Copy the source from any rendered diagram
 
 ## Installation
@@ -41,7 +42,7 @@ See [Development](#development) to build and deploy your own instance.
 
 1. On a Confluence page, type `/mermaid` and insert the **Merfluence** macro.
 2. Write Mermaid in the editor, start from a template, or drag in a `.mmd`/Markdown file — the preview updates as you type.
-3. Optionally pin a Mermaid version or set the theme, then **Save diagram**.
+3. Optionally set the display size, theme, or pinned Mermaid version, then **Save diagram**.
 4. Readers see the rendered diagram with pan, zoom, fullscreen, and SVG/PNG export.
 
 ![A rendered flowchart on a Confluence page with the pan, zoom, and export toolbar](docs/images/reader-view.webp)

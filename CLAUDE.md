@@ -21,6 +21,10 @@ src/lib/
   host.js                 @forge/bridge wrappers, theme resolution
   templates.js            Starter diagrams for the type dropdown
   mermaid-lang.js         CodeMirror StreamLanguage for Mermaid
+  cache.js                Rendered-SVG cache stored in macro config
+  mermaid-file.js         Extract Mermaid from dropped .mmd / .md files
+  sizing.js               Diagram height presets (Natural/S/M/L)
+  zoom.js                 Cursor/centre-anchored zoom math
 src/view/                 Reader view (main.jsx, index.html)
 src/config/               Editor: CodeMirror, live preview, error gutter
 test/                     Parse-only regression corpus (test/fixtures/*.mmd)
