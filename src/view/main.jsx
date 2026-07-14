@@ -5,9 +5,8 @@ import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { resolvedVersion } from '../lib/mermaid-registry.js';
 import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
 import { pickCachedSvg } from '../lib/cache.js';
-
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 4;
+import { normalizeHeight } from '../lib/sizing.js';
+import { anchoredZoom } from '../lib/zoom.js';
 
 function download(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -54,6 +53,26 @@ async function exportPng(svgEl, scale = 2) {
 function Toolbar({ stageRef, source, onZoom, onReset, zoom }) {
   const [copied, setCopied] = useState(false);
   const [failure, setFailure] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef(null);
+
+  // Close the export menu on an outside click or Escape, the two things a user
+  // expects to dismiss a popup.
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onDown = (e) => {
+      if (!exportRef.current?.contains(e.target)) setExportOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setExportOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [exportOpen]);
 
   const copySource = async () => {
     try {
@@ -93,12 +112,40 @@ function Toolbar({ stageRef, source, onZoom, onReset, zoom }) {
       <button type="button" onClick={copySource}>
         {copied ? 'Copied' : 'Copy source'}
       </button>
-      <button type="button" onClick={saveSvg}>
-        SVG
-      </button>
-      <button type="button" onClick={savePng}>
-        PNG
-      </button>
+      <div className="export" ref={exportRef}>
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={exportOpen}
+          onClick={() => setExportOpen((open) => !open)}
+        >
+          Export <span aria-hidden="true">▾</span>
+        </button>
+        {exportOpen && (
+          <div className="export-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                savePng();
+                setExportOpen(false);
+              }}
+            >
+              PNG
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                saveSvg();
+                setExportOpen(false);
+              }}
+            >
+              SVG
+            </button>
+          </div>
+        )}
+      </div>
       <button type="button" onClick={() => onZoom(-0.2)} aria-label="Zoom out">
         &minus;
       </button>
@@ -122,19 +169,87 @@ function Toolbar({ stageRef, source, onZoom, onReset, zoom }) {
   );
 }
 
-function Stage({ svg, useMaxWidth }) {
+function Stage({ svg, useMaxWidth, height }) {
   const stageRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef(null);
 
-  const clamp = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+  // The wheel/fullscreen listeners below are bound once, so they'd close over
+  // the initial state. These refs hand them the current values.
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const panRef = useRef(pan);
+  panRef.current = pan;
 
-  const onWheel = useCallback((event) => {
-    if (document.fullscreenElement) return; // fullscreen is a fixed fit-to-screen view
-    if (!event.ctrlKey && !event.metaKey) return; // let the page scroll
-    event.preventDefault();
-    setZoom((z) => clamp(z - event.deltaY * 0.002));
+  // Zoom to `nextZoom` while keeping the point at client coords (anchorX,
+  // anchorY) fixed, by shifting the pan. Shared by the wheel (anchor = cursor)
+  // and the toolbar +/- buttons (anchor = stage centre). .pan transforms from
+  // its top-left, so its live on-screen rect is the reference; that rect already
+  // includes the margin-auto centring, so the offset cancels out.
+  const zoomTo = (nextZoom, anchorX, anchorY) => {
+    const panRect = stageRef.current?.querySelector('.pan')?.getBoundingClientRect();
+    if (!panRect) return;
+    const next = anchoredZoom({
+      oldZoom: zoomRef.current,
+      nextZoom,
+      pan: panRef.current,
+      anchorX,
+      anchorY,
+      panLeft: panRect.left,
+      panTop: panRect.top,
+    });
+    if (!next) return; // at a clamp bound; nothing to do
+    setZoom(next.zoom);
+    setPan(next.pan);
+  };
+
+  // Fullscreen reuses the inline pan/zoom, so we snapshot the view on enter and
+  // reset to a clean whole-diagram view for a predictable start; on exit we
+  // restore the snapshot, so navigating in fullscreen never disturbs the inline
+  // diagram. Exiting also re-reveals the macro: exiting fullscreen from inside a
+  // Forge iframe drops the parent Confluence page's scroll to the top of our
+  // macro (a cross-origin quirk we can't read the scroll position around), and
+  // scrollIntoView scrolls the parent frame back to it, which needs no scope.
+  const preFullscreen = useRef(null);
+  useEffect(() => {
+    const onFsChange = () => {
+      if (document.fullscreenElement) {
+        preFullscreen.current = { zoom: zoomRef.current, pan: panRef.current };
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+      } else {
+        if (preFullscreen.current) {
+          setZoom(preFullscreen.current.zoom);
+          setPan(preFullscreen.current.pan);
+          preFullscreen.current = null;
+        }
+        stageRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // Ctrl/⌘ + wheel zooms the diagram. This MUST be a native, non-passive
+  // listener: React registers its onWheel prop as passive, so preventDefault()
+  // there is ignored and the browser still runs its own ctrl+wheel gesture —
+  // which zooms the whole Confluence page. Binding wheel ourselves with
+  // { passive: false } lets preventDefault actually cancel that page zoom, so
+  // only the diagram scales.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const onWheel = (event) => {
+      // Inline: require Ctrl/⌘ so a plain scroll still moves the page. Fullscreen:
+      // nothing is behind the diagram, so a plain wheel zooms like an image viewer.
+      if (!document.fullscreenElement && !event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      // Zoom toward the cursor.
+      zoomTo(zoomRef.current - event.deltaY * 0.002, event.clientX, event.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
   // Drag by tracking deltas from the pointerdown origin.
@@ -147,9 +262,10 @@ function Stage({ svg, useMaxWidth }) {
   };
 
   const handleDown = (event) => {
-    // In fullscreen the diagram is a fixed, centred fit-to-screen view. Panning
-    // there would silently move the diagram once you exit, so it's disabled.
-    if (document.fullscreenElement) return;
+    // Don't start a pan when the press lands on the fullscreen exit button:
+    // capturing the pointer to the stage steals its pointerup, so the button's
+    // click never fires (the cause of the exit working only intermittently).
+    if (event.target.closest('.fs-exit')) return;
     drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -166,8 +282,11 @@ function Stage({ svg, useMaxWidth }) {
           inner .pan, which moves within the frame. */}
       <div
         ref={stageRef}
-        className={`stage${useMaxWidth ? '' : ' no-shrink'}${drag.current ? ' dragging' : ''}`}
-        onWheel={onWheel}
+        className={`stage${useMaxWidth ? '' : ' no-shrink'}${height ? ' sized' : ''}${drag.current ? ' dragging' : ''}`}
+        // The editor's chosen height is applied as a CSS variable the .sized
+        // rules read; the SVG scales to it, keeping its aspect ratio, and the
+        // existing pan/zoom reaches anything wider than the column.
+        style={height ? { '--diagram-height': `${height}px` } : undefined}
         onPointerDown={handleDown}
         onPointerMove={handleMove}
         onPointerUp={handleUp}
@@ -196,7 +315,12 @@ function Stage({ svg, useMaxWidth }) {
       <ToolbarPortal
         stageRef={stageRef}
         zoom={zoom}
-        onZoom={(delta) => setZoom((z) => clamp(z + delta))}
+        onZoom={(delta) => {
+          // Zoom toward the middle of the visible diagram.
+          const rect = stageRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          zoomTo(zoomRef.current + delta, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }}
         onReset={() => {
           setZoom(1);
           setPan({ x: 0, y: 0 });
@@ -355,7 +479,11 @@ function App() {
   return (
     <ToolbarContext.Provider value={config.source ?? ''}>
       <div className="root">
-        <Stage svg={state.svg} useMaxWidth={config.useMaxWidth !== false} />
+        <Stage
+          svg={state.svg}
+          useMaxWidth={config.useMaxWidth !== false}
+          height={normalizeHeight(config.height)}
+        />
         <div className="meta">Mermaid {resolvedVersion(config.mermaidVersion)}</div>
       </div>
     </ToolbarContext.Provider>

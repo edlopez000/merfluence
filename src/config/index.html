@@ -152,6 +152,30 @@
         height: auto;
       }
 
+      /* Sized preview: with no explicit height the wrapper hugs the diagram;
+         once a Size preset sets one, the SVG scales to fill it, keeping its
+         aspect ratio. Mirrors the reader's .stage.sized so the preview matches
+         what readers get. */
+      .preview-diagram {
+        display: inline-block;
+        max-width: 100%;
+      }
+      .preview-svg {
+        display: block;
+        height: 100%;
+      }
+      .preview-diagram.sized {
+        height: var(--diagram-height);
+      }
+      /* !important for the same reason as the reader's .stage.sized svg: Mermaid
+         writes an inline max-width/width when useMaxWidth is on. */
+      .preview-diagram.sized svg {
+        display: block;
+        height: 100% !important;
+        width: auto !important;
+        max-width: none !important;
+      }
+
       .diagnostic {
         border-left: 3px solid var(--ds-border-danger, #c9372c);
         background: var(--ds-background-danger, #ffedeb);
