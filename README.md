@@ -6,6 +6,8 @@
 ![Built on Atlassian Forge](https://img.shields.io/badge/Built%20on-Atlassian%20Forge-0052CC)
 ![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D)
 
+![The Merfluence editor: Mermaid source on the left, a live preview on the right](docs/images/editor.webp)
+
 Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Forge](https://developer.atlassian.com/platform/forge/), that renders Mermaid diagrams client-side. Diagram source lives in the page, and the rendering happens in the reader's browser. The app has no backend and requests no data-access permissions, so your diagrams never leave Atlassian — or reach us.
 
 ## Highlights
@@ -42,6 +44,8 @@ See [Development](#development) to build and deploy your own instance.
 3. Optionally pin a Mermaid version or set the theme, then **Save diagram**.
 4. Readers see the rendered diagram with pan, zoom, fullscreen, and SVG/PNG export.
 
+![A rendered flowchart on a Confluence page with the pan, zoom, and export toolbar](docs/images/reader-view.webp)
+
 ## Privacy & security
 
 The manifest is the product:
@@ -56,6 +60,8 @@ permissions:
 - **No `scopes`** — the app cannot read any page through the Confluence REST API.
 - **No `external`** — the app cannot contact any host outside Atlassian.
 - **No `function`** — there is no backend; no handler exists that could receive a diagram, let alone forward it.
+
+![Dropping a file onto the editor, with the note that it is read in the browser and not uploaded anywhere](docs/images/file-drop.webp)
 
 Diagram source is stored as macro configuration in the page's own body and rendered to SVG by JavaScript in the reader's browser. The single declared permission — inline styles — is required only because Mermaid writes `style="…"` attributes onto the SVG it generates. Styles only; never scripts, never `unsafe-eval`.
 
