@@ -179,19 +179,53 @@ function Stage({ svg, useMaxWidth, height }) {
 
   const clamp = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
-  // The wheel listener below is bound once, so it would close over the initial
-  // zoom. This ref hands it the current value to scale from.
+  // The wheel/fullscreen listeners below are bound once, so they'd close over
+  // the initial state. These refs hand them the current values.
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const panRef = useRef(pan);
+  panRef.current = pan;
 
-  // Exiting fullscreen from inside a Forge iframe drops the parent Confluence
-  // page's scroll to the top of our macro (a cross-origin quirk we can't read
-  // the scroll position around). scrollIntoView reveals the diagram again — the
-  // browser scrolls the parent frame to show it, which needs no scope — so the
-  // reader lands back where they launched fullscreen instead of at the top.
+  // Zoom to `nextZoom` while keeping the point at client coords (anchorX,
+  // anchorY) fixed, by shifting the pan. Shared by the wheel (anchor = cursor)
+  // and the toolbar +/- buttons (anchor = stage centre). .pan transforms from
+  // its top-left, so its live on-screen rect is the reference; that rect already
+  // includes the margin-auto centring, so the offset cancels out.
+  const zoomTo = (nextZoom, anchorX, anchorY) => {
+    const oldZoom = zoomRef.current;
+    const newZoom = clamp(nextZoom);
+    if (newZoom === oldZoom) return; // at a clamp bound; nothing to do
+    const panRect = stageRef.current?.querySelector('.pan')?.getBoundingClientRect();
+    const shift = 1 - newZoom / oldZoom;
+    setZoom(newZoom);
+    if (panRect) {
+      setPan((p) => ({
+        x: p.x + (anchorX - panRect.left) * shift,
+        y: p.y + (anchorY - panRect.top) * shift,
+      }));
+    }
+  };
+
+  // Fullscreen reuses the inline pan/zoom, so we snapshot the view on enter and
+  // reset to a clean whole-diagram view for a predictable start; on exit we
+  // restore the snapshot, so navigating in fullscreen never disturbs the inline
+  // diagram. Exiting also re-reveals the macro: exiting fullscreen from inside a
+  // Forge iframe drops the parent Confluence page's scroll to the top of our
+  // macro (a cross-origin quirk we can't read the scroll position around), and
+  // scrollIntoView scrolls the parent frame back to it, which needs no scope.
+  const preFullscreen = useRef(null);
   useEffect(() => {
     const onFsChange = () => {
-      if (!document.fullscreenElement) {
+      if (document.fullscreenElement) {
+        preFullscreen.current = { zoom: zoomRef.current, pan: panRef.current };
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+      } else {
+        if (preFullscreen.current) {
+          setZoom(preFullscreen.current.zoom);
+          setPan(preFullscreen.current.pan);
+          preFullscreen.current = null;
+        }
         stageRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
       }
     };
@@ -209,28 +243,12 @@ function Stage({ svg, useMaxWidth, height }) {
     const el = stageRef.current;
     if (!el) return;
     const onWheel = (event) => {
-      if (document.fullscreenElement) return; // fullscreen is a fixed fit-to-screen view
-      if (!event.ctrlKey && !event.metaKey) return; // let the page scroll
+      // Inline: require Ctrl/⌘ so a plain scroll still moves the page. Fullscreen:
+      // nothing is behind the diagram, so a plain wheel zooms like an image viewer.
+      if (!document.fullscreenElement && !event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-
-      const oldZoom = zoomRef.current;
-      const newZoom = clamp(oldZoom - event.deltaY * 0.002);
-      if (newZoom === oldZoom) return; // already at a clamp bound; nothing to do
-
-      // Zoom toward the cursor: keep the point under the pointer fixed by
-      // shifting the pan. .pan transforms from its top-left (transform-origin
-      // 0 0), so its current on-screen rect gives that anchor; the ratio of new
-      // to old zoom says how far to nudge the translation. The rect already
-      // includes the margin-auto centring, so that offset cancels out.
-      const panEl = el.querySelector('.pan');
-      const panRect = panEl.getBoundingClientRect();
-      const shift = 1 - newZoom / oldZoom;
-
-      setZoom(newZoom);
-      setPan((p) => ({
-        x: p.x + (event.clientX - panRect.left) * shift,
-        y: p.y + (event.clientY - panRect.top) * shift,
-      }));
+      // Zoom toward the cursor.
+      zoomTo(zoomRef.current - event.deltaY * 0.002, event.clientX, event.clientY);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -246,9 +264,10 @@ function Stage({ svg, useMaxWidth, height }) {
   };
 
   const handleDown = (event) => {
-    // In fullscreen the diagram is a fixed, centred fit-to-screen view. Panning
-    // there would silently move the diagram once you exit, so it's disabled.
-    if (document.fullscreenElement) return;
+    // Don't start a pan when the press lands on the fullscreen exit button:
+    // capturing the pointer to the stage steals its pointerup, so the button's
+    // click never fires (the cause of the exit working only intermittently).
+    if (event.target.closest('.fs-exit')) return;
     drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -298,7 +317,12 @@ function Stage({ svg, useMaxWidth, height }) {
       <ToolbarPortal
         stageRef={stageRef}
         zoom={zoom}
-        onZoom={(delta) => setZoom((z) => clamp(z + delta))}
+        onZoom={(delta) => {
+          // Zoom toward the middle of the visible diagram.
+          const rect = stageRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          zoomTo(zoomRef.current + delta, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }}
         onReset={() => {
           setZoom(1);
           setPan({ x: 0, y: 0 });
