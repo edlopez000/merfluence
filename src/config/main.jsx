@@ -14,6 +14,7 @@ import { VERSION_OPTIONS } from '../lib/mermaid-registry.js';
 import { TEMPLATES, DEFAULT_SOURCE } from '../lib/templates.js';
 import { buildCacheFields, CACHE_VERSION } from '../lib/cache.js';
 import { extractMermaidSource } from '../lib/mermaid-file.js';
+import { SIZE_PRESETS, heightForPreset, normalizeHeight, presetForHeight } from '../lib/sizing.js';
 import { closeConfig, enableTheme, getConfig, resolveTheme, submitConfig } from '../lib/host.js';
 
 const DEBOUNCE_MS = 300;
@@ -109,6 +110,9 @@ function Panel({ initial }) {
   const [mermaidVersion, setMermaidVersion] = useState(initial.mermaidVersion || 'auto');
   const [theme, setTheme] = useState(initial.theme || 'auto');
   const [useMaxWidth, setUseMaxWidth] = useState(initial.useMaxWidth !== false);
+  // Explicit render height (px) or null for natural size. Chosen from the Size
+  // presets; persisted to config so every reader matches.
+  const [height, setHeight] = useState(normalizeHeight(initial.height));
 
   const [preview, setPreview] = useState({ status: 'idle' });
   const [dropError, setDropError] = useState(null);
@@ -238,7 +242,11 @@ function Panel({ initial }) {
     } catch {
       cacheFields = { cacheV: CACHE_VERSION };
     }
-    await submitConfig({ source, mermaidVersion, theme, useMaxWidth, ...cacheFields });
+    // `height` is a display-time size, not part of the render inputs, so it
+    // rides alongside the cache fields without affecting them. Omit when unset
+    // so a natural-size diagram doesn't carry a stale key.
+    const sizing = height ? { height } : {};
+    await submitConfig({ source, mermaidVersion, theme, useMaxWidth, ...sizing, ...cacheFields });
   };
 
   const valid = preview.status === 'ready';
@@ -287,6 +295,20 @@ function Panel({ initial }) {
         </label>
 
         <label>
+          Size
+          <select
+            value={presetForHeight(height)}
+            onChange={(e) => setHeight(heightForPreset(e.target.value))}
+          >
+            {SIZE_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
           Mermaid
           <select value={mermaidVersion} onChange={(e) => setMermaidVersion(e.target.value)}>
             {VERSION_OPTIONS.map((v) => (
@@ -325,7 +347,12 @@ function Panel({ initial }) {
           <div className="pane-title">Preview</div>
           <div className="preview">
             {preview.status === 'ready' && (
-              <div dangerouslySetInnerHTML={{ __html: preview.svg }} />
+              <div
+                className={`preview-diagram${height ? ' sized' : ''}`}
+                style={height ? { '--diagram-height': `${height}px` } : undefined}
+              >
+                <div className="preview-svg" dangerouslySetInnerHTML={{ __html: preview.svg }} />
+              </div>
             )}
             {preview.status === 'empty' && <span>Write some Mermaid to see it here.</span>}
             {preview.status === 'idle' && <span>Rendering…</span>}

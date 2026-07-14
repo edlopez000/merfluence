@@ -65,6 +65,23 @@
         max-width: none;
       }
 
+      /* An explicit height chosen in the editor (drag the preview's bottom edge,
+         save). The SVG scales to --diagram-height, keeping the aspect ratio from
+         its viewBox; the .pan drops its column clamp so a now-wider diagram isn't
+         squashed, and the existing pan/zoom reaches whatever overflows. Unset
+         falls back to the natural fit rules above. */
+      .stage.sized .pan {
+        max-width: none;
+      }
+      /* !important beats the inline max-width/width Mermaid writes onto the SVG
+         when useMaxWidth is on (same reason the :fullscreen rules use it); width
+         is auto so the height drives a proportional resize via the viewBox. */
+      .stage.sized svg {
+        height: var(--diagram-height) !important;
+        width: auto !important;
+        max-width: none !important;
+      }
+
       /* Fullscreen: ignore the interactive pan/zoom and fit the diagram to the
          screen, centred. We hand the SVG the full padded box; its viewBox plus
          the default preserveAspectRatio ("xMidYMid meet") does the scale-to-fit
@@ -156,6 +173,32 @@
       .toolbar button:focus-visible {
         outline: 2px solid var(--ds-border-focused, #388bff);
         outline-offset: 1px;
+      }
+
+      /* Export is a button that opens a small menu of formats (PNG / SVG),
+         replacing the two separate buttons. The menu is absolutely positioned so
+         it drops below without changing the toolbar's height. */
+      .export {
+        position: relative;
+        display: flex;
+      }
+      .export-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        min-width: 100%;
+        padding: 2px;
+        border-radius: 6px;
+        background: var(--ds-surface-overlay, #fff);
+        border: 1px solid var(--ds-border, #dfe1e6);
+        box-shadow: var(--ds-shadow-overlay, 0 4px 8px rgba(9, 30, 66, 0.25));
+      }
+      .export-menu button {
+        justify-content: flex-start;
+        text-align: left;
       }
       /* The zoom percentage doubles as the "reset view" control (click to reset
          zoom + pan). It inherits .toolbar button styling, including hover. */
