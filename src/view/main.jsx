@@ -179,6 +179,11 @@ function Stage({ svg, useMaxWidth, height }) {
 
   const clamp = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
+  // The wheel listener below is bound once, so it would close over the initial
+  // zoom. This ref hands it the current value to scale from.
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+
   // Exiting fullscreen from inside a Forge iframe drops the parent Confluence
   // page's scroll to the top of our macro (a cross-origin quirk we can't read
   // the scroll position around). scrollIntoView reveals the diagram again — the
@@ -207,7 +212,25 @@ function Stage({ svg, useMaxWidth, height }) {
       if (document.fullscreenElement) return; // fullscreen is a fixed fit-to-screen view
       if (!event.ctrlKey && !event.metaKey) return; // let the page scroll
       event.preventDefault();
-      setZoom((z) => clamp(z - event.deltaY * 0.002));
+
+      const oldZoom = zoomRef.current;
+      const newZoom = clamp(oldZoom - event.deltaY * 0.002);
+      if (newZoom === oldZoom) return; // already at a clamp bound; nothing to do
+
+      // Zoom toward the cursor: keep the point under the pointer fixed by
+      // shifting the pan. .pan transforms from its top-left (transform-origin
+      // 0 0), so its current on-screen rect gives that anchor; the ratio of new
+      // to old zoom says how far to nudge the translation. The rect already
+      // includes the margin-auto centring, so that offset cancels out.
+      const panEl = el.querySelector('.pan');
+      const panRect = panEl.getBoundingClientRect();
+      const shift = 1 - newZoom / oldZoom;
+
+      setZoom(newZoom);
+      setPan((p) => ({
+        x: p.x + (event.clientX - panRect.left) * shift,
+        y: p.y + (event.clientY - panRect.top) * shift,
+      }));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
