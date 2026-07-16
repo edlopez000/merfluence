@@ -65,18 +65,28 @@
         max-width: none;
       }
 
-      /* An explicit height chosen in the editor (drag the preview's bottom edge,
-         save). The SVG scales to --diagram-height, keeping the aspect ratio from
-         its viewBox; the .pan drops its column clamp so a now-wider diagram isn't
-         squashed, and the existing pan/zoom reaches whatever overflows. Unset
-         falls back to the natural fit rules above. */
-      .stage.sized .pan {
+      /* An explicit height chosen in the editor's Size dropdown (see SIZE_PRESETS
+         in src/lib/sizing.js). The SVG scales to --diagram-height, keeping the
+         aspect ratio from its viewBox; the .pan drops its column clamp so a
+         now-wider diagram isn't squashed, and the existing pan/zoom reaches
+         whatever overflows. Unset — the Natural preset — falls back to the
+         natural fit rules above.
+
+         :not(:fullscreen) because the preset sizes the macro within a page
+         column, which means nothing once the stage IS the screen — it would
+         strand a Small diagram as a 320px strip. Excluding the rules entirely is
+         deliberate: fullscreen then reuses the natural rules above verbatim,
+         rather than layering overrides that have to win an !important fight and
+         reason about which of width/height stays definite. */
+      .stage.sized:not(:fullscreen) .pan {
         max-width: none;
       }
       /* !important beats the inline max-width/width Mermaid writes onto the SVG
-         when useMaxWidth is on (same reason the :fullscreen rules use it); width
-         is auto so the height drives a proportional resize via the viewBox. */
-      .stage.sized svg {
+         when useMaxWidth is on. width:auto is only safe BECAUSE height is
+         definite here: Mermaid emits width="100%" and no height attribute, so
+         the viewBox ratio needs exactly one of the two fixed to resolve. Setting
+         both to auto leaves the SVG with no size at all (a blank diagram). */
+      .stage.sized:not(:fullscreen) svg {
         height: var(--diagram-height) !important;
         width: auto !important;
         max-width: none !important;
@@ -84,10 +94,12 @@
 
       /* Fullscreen keeps the same interactive pan/zoom as the inline view — it's
          just a larger, backdropped stage, so the live transform on .pan stays in
-         effect and you can zoom (Ctrl/⌘ + wheel) and drag around. The diagram
-         keeps its normal sizing: a wide one fills the screen width via
-         max-width:100%, and you zoom in for detail. The view is reset on enter
-         and restored on exit by the fullscreenchange handler. Exit with Esc. */
+         effect and you can zoom (plain wheel here) and drag around. On enter the
+         fullscreenchange handler fits the diagram to the screen and centres it
+         (see fitView in src/lib/zoom.js); on exit it restores the inline view.
+         Centring is the JS's job, not this rule's: the fit zoom and the centring
+         offset are one calculation, so splitting them across CSS and JS would
+         mean measuring around whatever CSS had already done. Exit with Esc. */
       .stage:fullscreen {
         background: var(--ds-surface, #fff);
         padding: 24px;

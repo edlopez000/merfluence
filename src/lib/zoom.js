@@ -39,3 +39,52 @@ export function anchoredZoom({ oldZoom, nextZoom, pan, anchorX, anchorY, panLeft
     },
   };
 }
+
+/**
+ * Recover a layer's untransformed client rect from the rect the browser reports
+ * while `zoom`/`pan` are applied to it — the layout box the transform was built
+ * on. Lets a caller measure without first resetting the transform to identity
+ * and waiting a frame to re-measure.
+ *
+ * Derivation: with transform-origin 0 0, `translate(pan) scale(z)` maps a local
+ * point p to layout + pan + z*p. At p = 0 that gives the reported left/top, so
+ * layout = reported - pan; the size is simply scaled, so it divides out.
+ */
+export function untransformedRect({ rect, zoom, pan }) {
+  return {
+    left: rect.left - pan.x,
+    top: rect.top - pan.y,
+    width: rect.width / zoom,
+    height: rect.height / zoom,
+  };
+}
+
+/**
+ * Compute the { zoom, pan } that scales `content` to fit inside `view` and
+ * centres it there. Both are client-coord rects ({ left, top, width, height }),
+ * and `content` MUST be the layer's *untransformed* rect (see untransformedRect)
+ * — pan is applied as an unscaled translate, so its values are client px and map
+ * 1:1 onto the offsets returned here. Returns null if either rect is degenerate
+ * (a diagram that has not laid out yet), meaning the caller should fall back to
+ * a plain reset.
+ *
+ * The `- content.left` term is why this takes rects rather than sizes: it
+ * absorbs wherever the pan layer's own margin already placed it, so the caller
+ * never has to know about the CSS centring.
+ */
+export function fitView({ content, view }) {
+  const dims = [content.width, content.height, view.width, view.height];
+  if (!dims.every((n) => Number.isFinite(n) && n > 0)) return null;
+  // min so the binding axis fits; clamp so a tiny diagram stops at MAX_ZOOM
+  // rather than filling the screen at absurd scale.
+  const zoom = clampZoom(Math.min(view.width / content.width, view.height / content.height));
+  return {
+    zoom,
+    // Halve the leftover space on each axis. Uses the *clamped* zoom, so a
+    // clamped diagram still lands centred rather than offset by the shortfall.
+    pan: {
+      x: view.left + (view.width - content.width * zoom) / 2 - content.left,
+      y: view.top + (view.height - content.height * zoom) / 2 - content.top,
+    },
+  };
+}
