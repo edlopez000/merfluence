@@ -6,7 +6,7 @@ import { resolvedVersion } from '../lib/mermaid-registry.js';
 import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
 import { pickCachedSvg } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
-import { anchoredZoom } from '../lib/zoom.js';
+import { anchoredZoom, fitView, untransformedRect } from '../lib/zoom.js';
 
 function download(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -173,7 +173,11 @@ function Stage({ svg, useMaxWidth, height }) {
   const stageRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  // Coords live in a ref (a pointermove shouldn't re-render for them), but the
+  // grabbing cursor needs real state: mutating a ref repaints nothing, which is
+  // why the cursor used to stay grabbing after a release.
   const drag = useRef(null);
+  const [dragging, setDragging] = useState(false);
 
   // The wheel/fullscreen listeners below are bound once, so they'd close over
   // the initial state. These refs hand them the current values.
@@ -204,20 +208,84 @@ function Stage({ svg, useMaxWidth, height }) {
     setPan(next.pan);
   };
 
+  // Scale the diagram to fill the screen and centre it. Mirrors zoomTo: measure
+  // live rects, hand the math to the pure helper, apply the result.
+  const fitToStage = () => {
+    const stage = stageRef.current;
+    const panEl = stage?.querySelector('.pan');
+    if (!panEl) return false;
+
+    // .pan's rect carries whatever transform is applied right now, so invert it to
+    // recover the untransformed rect fitView needs. The caller resets to identity
+    // first, but a React state change may not have painted by the time we measure,
+    // so read the transform from the refs rather than assuming it's gone.
+    const content = untransformedRect({
+      rect: panEl.getBoundingClientRect(),
+      zoom: zoomRef.current,
+      pan: panRef.current,
+    });
+
+    // The viewport is the stage's content box: its rect inset by the padding the
+    // :fullscreen rule adds (read, not hardcoded, so the CSS stays the one owner).
+    const stageRect = stage.getBoundingClientRect();
+    const style = getComputedStyle(stage);
+    const inset = (side) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+    const view = {
+      left: stageRect.left + inset('left'),
+      top: stageRect.top + inset('top'),
+      width: stageRect.width - inset('left') - inset('right'),
+      height: stageRect.height - inset('top') - inset('bottom'),
+    };
+
+    const next = fitView({ content, view });
+    if (!next) return false;
+    setZoom(next.zoom);
+    setPan(next.pan);
+    return true;
+  };
+
+  // Re-fit on every stage resize while fullscreen. Whether fullscreenchange fires
+  // before or after the element has been resized to the screen varies (and an
+  // iframe adds a hop: the parent resizes us, then our document relayouts), so
+  // rather than guess when the size is final, treat "the size changed" as the
+  // trigger. A measurement taken too early is then self-correcting — the next
+  // resize refits — instead of permanently mis-centring the diagram.
+  //
+  // Refitting can't loop: in fullscreen the stage is pinned to the viewport, and
+  // .pan's transform doesn't feed back into layout. Inline, the guard skips out,
+  // so a page-column resize never disturbs a view the user set themselves.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const observer = new ResizeObserver(() => {
+      if (document.fullscreenElement !== stage) return;
+      fitToStage();
+    });
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
+
   // Fullscreen reuses the inline pan/zoom, so we snapshot the view on enter and
-  // reset to a clean whole-diagram view for a predictable start; on exit we
-  // restore the snapshot, so navigating in fullscreen never disturbs the inline
-  // diagram. Exiting also re-reveals the macro: exiting fullscreen from inside a
-  // Forge iframe drops the parent Confluence page's scroll to the top of our
-  // macro (a cross-origin quirk we can't read the scroll position around), and
-  // scrollIntoView scrolls the parent frame back to it, which needs no scope.
+  // open on the whole diagram, fitted to the screen and centred, for a
+  // predictable start; on exit we restore the snapshot, so navigating in
+  // fullscreen never disturbs the inline diagram. Exiting also re-reveals the
+  // macro: exiting fullscreen from inside a Forge iframe drops the parent
+  // Confluence page's scroll to the top of our macro (a cross-origin quirk we
+  // can't read the scroll position around), and scrollIntoView scrolls the parent
+  // frame back to it, which needs no scope.
   const preFullscreen = useRef(null);
   useEffect(() => {
     const onFsChange = () => {
       if (document.fullscreenElement) {
         preFullscreen.current = { zoom: zoomRef.current, pan: panRef.current };
+        // Reset first: if the fit below and the observer both somehow miss, this
+        // is exactly the whole-diagram view that shipped before — never nonsense.
         setZoom(1);
         setPan({ x: 0, y: 0 });
+        // Fit now in case entering fullscreen doesn't change the stage's size and
+        // so never fires the observer. If the size isn't final yet this fit is
+        // wrong, and the observer corrects it when the resize lands.
+        fitToStage();
       } else {
         if (preFullscreen.current) {
           setZoom(preFullscreen.current.zoom);
@@ -255,6 +323,16 @@ function Stage({ svg, useMaxWidth, height }) {
   // Drag by tracking deltas from the pointerdown origin.
   const handleMove = (event) => {
     if (!drag.current) return;
+    // Nothing held? The release happened somewhere we never heard about — the
+    // parent Confluence page, which is cross-origin, so our document sees no
+    // pointerup and pointer capture can't reach across the iframe boundary. The
+    // drag would otherwise resume the moment the cursor came back. A stuck drag
+    // is only observable through a later move, so this check is the backstop
+    // that catches every path.
+    if (event.buttons === 0) {
+      handleUp();
+      return;
+    }
     setPan({
       x: drag.current.px + (event.clientX - drag.current.x),
       y: drag.current.py + (event.clientY - drag.current.y),
@@ -267,11 +345,15 @@ function Stage({ svg, useMaxWidth, height }) {
     // click never fires (the cause of the exit working only intermittently).
     if (event.target.closest('.fs-exit')) return;
     drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y };
+    setDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
+  // Called from several paths (pointerup, pointercancel, lostpointercapture, and
+  // the buttons check above), so it has to be idempotent.
   const handleUp = () => {
     drag.current = null;
+    setDragging(false);
   };
 
   return (
@@ -282,7 +364,7 @@ function Stage({ svg, useMaxWidth, height }) {
           inner .pan, which moves within the frame. */}
       <div
         ref={stageRef}
-        className={`stage${useMaxWidth ? '' : ' no-shrink'}${height ? ' sized' : ''}${drag.current ? ' dragging' : ''}`}
+        className={`stage${useMaxWidth ? '' : ' no-shrink'}${height ? ' sized' : ''}${dragging ? ' dragging' : ''}`}
         // The editor's chosen height is applied as a CSS variable the .sized
         // rules read; the SVG scales to it, keeping its aspect ratio, and the
         // existing pan/zoom reaches anything wider than the column.
@@ -291,6 +373,10 @@ function Stage({ svg, useMaxWidth, height }) {
         onPointerMove={handleMove}
         onPointerUp={handleUp}
         onPointerCancel={handleUp}
+        // Fires when capture breaks — including the release-outside-the-iframe
+        // case, which delivers neither pointerup nor pointercancel. Ends the drag
+        // even if the cursor never comes back to trigger the check in handleMove.
+        onLostPointerCapture={handleUp}
       >
         <div
           className="pan"

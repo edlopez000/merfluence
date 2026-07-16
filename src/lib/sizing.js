@@ -1,8 +1,8 @@
 /**
  * Diagram height override (pixels).
  *
- * A user can enlarge a diagram by dragging the bottom edge of the preview in the
- * editor; the chosen height is persisted to macro config as `height` and every
+ * A user picks a diagram's height from the editor's Size dropdown (SIZE_PRESETS
+ * below); the chosen height is persisted to macro config as `height` and every
  * reader renders at that size. It is applied purely as a display-time CSS height
  * on the rendered SVG (which keeps its aspect ratio from the viewBox), so it
  * never alters the cached SVG markup — resizing does NOT invalidate the
