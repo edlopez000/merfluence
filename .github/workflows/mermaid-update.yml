@@ -34,9 +34,14 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          # Pin below 22.23.1: Forge CLI blocklists that exact Node build
-          # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
-          node-version: 22.23.0
+          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
+          # regression in 22.23.x. On 22.23.x the Forge CLI (still on node-fetch@2)
+          # throws ERR_STREAM_PREMATURE_CLOSE mid-request fetching Atlassian's
+          # OpenAPI schemas, failing lint AND deploy. Root cause is Node, not the
+          # CLI: nodejs/node#63989, Atlassian FRGE-1750. 22.23.1 and 24.17.0 are
+          # also on Forge's own Node blocklist. Bare "22" resolves to the latest
+          # (bad) 22.x, so keep it exact.
+          node-version: 22.22.3
           cache: npm
       - run: npm ci
       # Covers the fixture corpus (both majors), the sanitizer boundary, and
@@ -60,9 +65,14 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          # Pin below 22.23.1: Forge CLI blocklists that exact Node build
-          # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
-          node-version: 22.23.0
+          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
+          # regression in 22.23.x. On 22.23.x the Forge CLI (still on node-fetch@2)
+          # throws ERR_STREAM_PREMATURE_CLOSE mid-request fetching Atlassian's
+          # OpenAPI schemas, failing lint AND deploy. Root cause is Node, not the
+          # CLI: nodejs/node#63989, Atlassian FRGE-1750. 22.23.1 and 24.17.0 are
+          # also on Forge's own Node blocklist. Bare "22" resolves to the latest
+          # (bad) 22.x, so keep it exact.
+          node-version: 22.22.3
           cache: npm
       - run: npm ci
       # Critical or high findings block the Marketplace update anyway.
@@ -134,9 +144,14 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          # Pin below 22.23.1: Forge CLI blocklists that exact Node build
-          # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
-          node-version: 22.23.0
+          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
+          # regression in 22.23.x. On 22.23.x the Forge CLI (still on node-fetch@2)
+          # throws ERR_STREAM_PREMATURE_CLOSE mid-request fetching Atlassian's
+          # OpenAPI schemas, failing lint AND deploy. Root cause is Node, not the
+          # CLI: nodejs/node#63989, Atlassian FRGE-1750. 22.23.1 and 24.17.0 are
+          # also on Forge's own Node blocklist. Bare "22" resolves to the latest
+          # (bad) 22.x, so keep it exact.
+          node-version: 22.22.3
           cache: npm
       # Installs @forge/cli from the lockfile. It used to be `npm i -g
       # @forge/cli@latest`, which resolved an unreviewed release on the runner
@@ -202,9 +217,14 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          # Pin below 22.23.1: Forge CLI blocklists that exact Node build
-          # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
-          node-version: 22.23.0
+          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
+          # regression in 22.23.x. On 22.23.x the Forge CLI (still on node-fetch@2)
+          # throws ERR_STREAM_PREMATURE_CLOSE mid-request fetching Atlassian's
+          # OpenAPI schemas, failing lint AND deploy. Root cause is Node, not the
+          # CLI: nodejs/node#63989, Atlassian FRGE-1750. 22.23.1 and 24.17.0 are
+          # also on Forge's own Node blocklist. Bare "22" resolves to the latest
+          # (bad) 22.x, so keep it exact.
+          node-version: 22.22.3
           cache: npm
       - run: npm ci
       - run: npm run build
