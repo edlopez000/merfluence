@@ -1,7 +1,8 @@
 name: Mermaid update
 
 # CI gate + version currency. Every PR runs the corpus and audit, so nothing
-# merges to main untested (this also covers the Renovate/Dependabot bump PRs).
+# merges to main untested — including the Renovate bump PRs configured in
+# renovate.json, which is where new Mermaid versions enter the repo.
 # A clean corpus means the syntax our customers already wrote still parses, so
 # a merge ships to staging with no human in the loop. Marketplace minor updates
 # do not require re-approval — they trigger a vulnerability scan that closes on
@@ -22,14 +23,21 @@ jobs:
     name: Diagram corpus
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # SHA-pinned: these jobs sit next to ones holding deploy credentials, and
+      # a tag is mutable — v4 can be repointed at any commit by anyone who can
+      # push a tag. Renovate bumps these using the trailing version comment.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Pin below 22.23.1: Forge CLI blocklists that exact Node build
           # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
           node-version: 22.22.0
           cache: npm
       - run: npm ci
+      # Covers the fixture corpus (both majors), the sanitizer boundary, and
+      # the manifest invariant — see test/manifest.test.js for why the manifest
+      # is asserted here rather than by `forge lint`, which cannot run without
+      # credentials and so cannot run in a PR job.
       - name: Every fixture still parses
         run: npm test
       - name: Both bundles build
@@ -44,8 +52,8 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Pin below 22.23.1: Forge CLI blocklists that exact Node build
           # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
@@ -55,7 +63,8 @@ jobs:
       # Critical or high findings block the Marketplace update anyway.
       # Better to learn it here than from an AMS ticket. Scope to prod deps:
       # only the runtime bundle ships to customer browsers, and dev-server
-      # tooling (vitest/vite/esbuild) can't reach the deployed Forge artifact.
+      # tooling (vitest/vite/esbuild/@forge/cli) can't reach the deployed
+      # Forge artifact.
       - run: npm audit --omit=dev --audit-level=high
 
   staging:
@@ -64,52 +73,101 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: staging
+    # Serialise the deploy pipeline. Two quick pushes to main would otherwise
+    # race two staging->production promotions against the same Forge app, and
+    # whichever deploy finished last would win regardless of commit order.
+    # cancel-in-progress: false — a half-finished deploy is worse than a slow one.
+    concurrency:
+      group: forge-deploy
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Pin below 22.23.1: Forge CLI blocklists that exact Node build
           # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
           node-version: 22.22.0
           cache: npm
+      # Installs @forge/cli from the lockfile. It used to be `npm i -g
+      # @forge/cli@latest`, which resolved an unreviewed release on the runner
+      # that then executed beside FORGE_API_TOKEN.
       - run: npm ci
-      - run: npm install -g @forge/cli@latest
       - run: npm run build
       # --non-interactive can't prompt for the analytics choice, so set it
       # explicitly on the fresh runner before deploying. Opt out.
-      - run: forge settings set usage-analytics false
+      #
+      # npx --no-install, not bare `forge`: the CLI is a devDependency now, and
+      # a run: step does not get node_modules/.bin on PATH the way an npm script
+      # does. --no-install makes a missing CLI fail loudly instead of silently
+      # fetching one from the network, which is the point of pinning it.
+      - run: npx --no-install forge settings set usage-analytics false
+      # Catches real schema errors (a dangling resource key, say) before they
+      # reach staging. It exits 0 on warnings and 1 on errors, so it blocks only
+      # on the latter. It runs here, not in the corpus job, because it
+      # authenticates against Atlassian and a PR job must not hold a token.
+      #
+      # It is NOT the guard on the zero-scope claim, and must not be mistaken
+      # for one: a manifest requesting read:confluence-content.all plus egress
+      # to an arbitrary host lints clean, because that is legal Forge. Legality
+      # is the linter's business; the no-scopes policy is ours, and it is
+      # enforced in test/manifest.test.js, on every PR, with no token needed.
+      - name: forge lint
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: npm run lint:forge
       - name: forge deploy
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: forge deploy -e staging --non-interactive
+        run: npx --no-install forge deploy -e staging --non-interactive
 
   # Production soaks in staging first, then this job runs — but the pause for a
   # human is NOT in this file: it comes from a required-reviewer rule on the
   # `production` GitHub Environment (Settings → Environments → production).
-  # Without that rule configured, this promotes automatically after staging.
+  # Verified present 2026-07-16: one required reviewer, admins cannot bypass.
+  # Self-review is permitted, so with a single maintainer the rule is a
+  # deliberate pause rather than a second pair of eyes — it stops an accidental
+  # promotion, not a determined one.
+  #
+  # That environment has no deployment-branch policy, so the `if` below is the
+  # only thing keeping production deploys on main. Editing it is enough to ship
+  # from any branch; there is no second guard behind it.
   production:
     name: Promote to production
     needs: [staging]
-    if: github.ref == 'refs/heads/main'
+    # The event_name check is redundant today — needs: [staging] already skips
+    # this when staging skips. It is here so the guard states its own intent
+    # instead of borrowing it from the needs graph, which someone will edit.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production
+    # Same group as staging: one deploy pipeline in flight at a time. staging
+    # has released the group by the time this starts (needs: [staging]), so
+    # sharing the group queues the next push rather than deadlocking this one.
+    concurrency:
+      group: forge-deploy
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Pin below 22.23.1: Forge CLI blocklists that exact Node build
           # (and 24.17.0). Bare "22" resolves to latest 22.x = the bad one.
           node-version: 22.22.0
           cache: npm
       - run: npm ci
-      - run: npm install -g @forge/cli@latest
       - run: npm run build
       # --non-interactive can't prompt for the analytics choice, so set it
       # explicitly on the fresh runner before deploying. Opt out.
-      - run: forge settings set usage-analytics false
+      #
+      # npx --no-install, not bare `forge`: the CLI is a devDependency now, and
+      # a run: step does not get node_modules/.bin on PATH the way an npm script
+      # does. --no-install makes a missing CLI fail loudly instead of silently
+      # fetching one from the network, which is the point of pinning it.
+      - run: npx --no-install forge settings set usage-analytics false
       - name: forge deploy
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: forge deploy -e production --non-interactive
+        run: npx --no-install forge deploy -e production --non-interactive

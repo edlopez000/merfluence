@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "matchDepNames": ["mermaid", "mermaid-10"],
+      "groupName": "mermaid",
+      "description": "Both copies of Mermaid ship in the bundle. Bump them in one PR so the corpus parses them as a pair, rather than leaving one major green while the other is untested."
+    },
+    {
+      "matchDepNames": ["mermaid-10"],
+      "allowedVersions": "<11",
+      "description": "mermaid-10 is an alias (npm:mermaid@^10.9.3) and it exists to BE the pinned major-10 line — a diagram pinned to 10 must keep rendering as 10. Grouping does not enforce this; only allowedVersions does. Crossing to 11 here would silently defeat the version dropdown."
+    },
+    {
+      "matchDepNames": ["@forge/cli"],
+      "rangeStrategy": "pin",
+      "description": "Pinned exact and deployed with production credentials, so a bump should be a reviewed PR that runs the full gate — never a floating @latest resolved on the runner."
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true
+  }
+}

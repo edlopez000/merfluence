@@ -2,7 +2,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import mermaid from 'mermaid';
+import mermaid11 from 'mermaid';
+import mermaid10 from 'mermaid-10';
+import { describeError } from '../src/lib/render.js';
 
 /**
  * Why parse and not render.
@@ -15,14 +17,30 @@ import mermaid from 'mermaid';
  * changing syntax across a version bump, so that a diagram a customer wrote
  * two years ago stops parsing. parse() catches exactly that, costs
  * milliseconds, and has no false positives.
+ *
+ * Why both majors.
+ *
+ * The version dropdown lets a diagram pin major 10, so mermaid-10 ships in the
+ * bundle and renders for real customers — it needs the same guarantee as 11,
+ * not less. Checking only the default major would leave the pinned line, which
+ * exists precisely to be the stable one, as the untested one.
  */
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const fixtures = readdirSync(fixturesDir).filter((f) => f.endsWith('.mmd'));
 
-mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false });
+// Mirrors the registry's majors. Mermaid keeps parser state on the singleton,
+// so initialize each once here rather than per-test.
+const majors = [
+  ['11', mermaid11],
+  ['10', mermaid10],
+];
 
-describe('mermaid corpus still parses', () => {
+for (const [, mermaid] of majors) {
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false });
+}
+
+describe.each(majors)('mermaid %s corpus still parses', (major, mermaid) => {
   it('has fixtures to check', () => {
     expect(fixtures.length).toBeGreaterThan(0);
   });
@@ -35,8 +53,8 @@ describe('mermaid corpus still parses', () => {
   }
 });
 
-describe('hardening', () => {
-  it('rejects nothing it should accept, and parses a click directive without binding it', async () => {
+describe.each(majors)('mermaid %s hardening', (major, mermaid) => {
+  it('parses a click directive without binding it', async () => {
     // securityLevel: 'strict' keeps this inert at render time. It should still
     // parse — silently failing to parse would break existing customer diagrams.
     const source = 'flowchart TD\n  A --> B\n  click A "https://example.com"';
@@ -48,6 +66,16 @@ describe('hardening', () => {
     // enough to swallow free tokens like `???!!!` as a node, so we use an
     // unterminated node bracket, which reliably throws with hash.loc.first_line.
     const bad = 'flowchart TD\n  A --> B\n  C[unterminated';
-    await expect(mermaid.parse(bad)).rejects.toThrow();
+
+    // Assert through describeError, the same path the config panel's error
+    // gutter uses. The two majors report locations in different shapes, which
+    // is the whole reason that helper exists — so pin the line it extracts,
+    // not merely that something threw.
+    const err = await mermaid.parse(bad).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).not.toBeNull();
+    expect(describeError(err).line).toBe(3);
   });
 });
