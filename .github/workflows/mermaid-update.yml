@@ -3,14 +3,19 @@ name: Mermaid update
 # CI gate + version currency. Every PR runs the corpus and audit, so nothing
 # merges to main untested — including the Renovate bump PRs configured in
 # renovate.json, which is where new Mermaid versions enter the repo.
-# A clean corpus means the syntax our customers already wrote still parses, so
-# a merge ships to staging with no human in the loop. Marketplace minor updates
-# do not require re-approval — they trigger a vulnerability scan that closes on
-# its own — so upstream release to customer browsers is under an hour.
+# A clean corpus means the syntax our customers already wrote still parses, so a
+# merge that touches shipped code ships to staging with no human in the loop.
+# Marketplace minor updates do not require re-approval — they trigger a
+# vulnerability scan that closes on its own — so upstream release to customer
+# browsers is under an hour.
 
 on:
-  # No paths filter: every PR gets the full test + audit gate, not just
-  # dependency bumps. Deploy jobs stay gated on push-to-main, so PRs never ship.
+  # No workflow-level paths filter, on purpose: the corpus and audit are required
+  # status checks, so they must report on EVERY PR. A paths filter here would skip
+  # them on a CI-only PR, and a required check that never runs blocks the PR
+  # forever. Deploy is instead gated per-job by the `changes` job below, which is
+  # not a required check and so is safe to skip. Deploy jobs also stay gated on
+  # push-to-main, so PRs never ship.
   pull_request:
   push:
     branches: [main]
@@ -67,10 +72,55 @@ jobs:
       # Forge artifact.
       - run: npm audit --omit=dev --audit-level=high
 
+  # Did this push touch anything that actually ships? A change confined to CI,
+  # tests, or docs produces a byte-identical Forge bundle, so deploying it burns a
+  # production approval for nothing — and trains the reviewer to approve without
+  # looking. staging consults this to decide whether to run at all.
+  #
+  # This job holds no environment and no FORGE_* secrets. That is deliberate: it
+  # is why a third-party action is acceptable here where it would not be beside
+  # deploy credentials.
+  changes:
+    name: Detect shippable changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      shippable: ${{ steps.filter.outputs.shippable }}
+    steps:
+      # dorny diffs a push against github.event.before, so it needs the base
+      # commit checked out (a PR would not). Same SHA pin as everywhere else.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # SHA-pinned like every action here; v4.0.2 was 15 days old at adoption, so
+      # it had cleared our own 14-day cooldown (renovate.json). The allow-list is
+      # the shipping surface: shippable == 'true' iff at least one changed file
+      # matches. Anything not listed (.github, test, scripts, docs, *.md,
+      # renovate.json, vitest.config.js) does not ship and does not deploy. This
+      # is fail-CLOSED — a NEW shipping path nobody adds here would be skipped, not
+      # shipped — so keep the list current; it is the one thing that must not drift.
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        id: filter
+        with:
+          filters: |
+            shippable:
+              - 'src/**'
+              - 'manifest.yml'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.view.config.js'
+              - 'vite.config.config.js'
+              - 'static/**'
+
   staging:
     name: Deploy to staging
-    needs: [corpus, audit]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [corpus, audit, changes]
+    # Deploy only a push to main that changed shipped code. The shippable check is
+    # what makes a CI/test/docs-only merge skip the deploy; the other two guards
+    # are unchanged.
+    if: >-
+      github.ref == 'refs/heads/main'
+      && github.event_name == 'push'
+      && needs.changes.outputs.shippable == 'true'
     runs-on: ubuntu-latest
     environment: staging
     # Serialise the deploy pipeline. Two quick pushes to main would otherwise
