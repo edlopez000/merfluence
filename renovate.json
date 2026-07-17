@@ -16,6 +16,11 @@
       "matchDepNames": ["@forge/cli"],
       "rangeStrategy": "pin",
       "description": "Pinned exact and deployed with production credentials, so a bump should be a reviewed PR that runs the full gate — never a floating @latest resolved on the runner."
+    },
+    {
+      "matchDepNames": ["node"],
+      "allowedVersions": ">=22.0.0 <22.23.1 || >22.23.1 <23.0.0",
+      "description": "The Forge CLI refuses to run on the 22.23.1 and 24.17.0 builds exactly — its engines range is >=20.18.1 <22.23.1 || >22.23.1 <24.17.0 || >24.17.0. The workflow says so in a comment beside every node-version, but Renovate cannot read comments and proposed 22.23.1 (PR #8), which passed both required checks: the corpus job never invokes the CLI, so nothing that runs on a PR can fail on a Node build the CLI rejects. Only the deploy would have. Stay on 22.x and step over the bad build."
     }
   ],
   "lockFileMaintenance": {
