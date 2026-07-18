@@ -181,11 +181,27 @@ jobs:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: npm run lint:forge
+      # Record the installed version BEFORE deploy so the verify step below has a
+      # baseline. Non-fatal: the real gate is the verify step.
+      - name: Snapshot installed version
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: node scripts/verify-deploy.mjs staging --snapshot
       - name: forge deploy
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: npx --no-install forge deploy -e staging --non-interactive
+      # forge deploy exiting 0 means "uploaded", not "the installation advanced".
+      # Poll install list until the staging installation reports Up-to-date, so a
+      # deploy that lands a version the install never adopts fails here (blocking)
+      # instead of surfacing only when someone opens Confluence.
+      - name: Verify installed version advanced
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: node scripts/verify-deploy.mjs staging --verify
 
   # Production soaks in staging first, then this job runs — but the pause for a
   # human is NOT in this file: it comes from a required-reviewer rule on the
@@ -236,8 +252,26 @@ jobs:
       # does. --no-install makes a missing CLI fail loudly instead of silently
       # fetching one from the network, which is the point of pinning it.
       - run: npx --no-install forge settings set usage-analytics false
+      # Record the installed version BEFORE deploy so the verify step below has a
+      # baseline. Non-fatal: the real gate is the verify step.
+      - name: Snapshot installed version
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: node scripts/verify-deploy.mjs production --snapshot
       - name: forge deploy
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: npx --no-install forge deploy -e production --non-interactive
+      # forge deploy exiting 0 means "uploaded", not "the installation advanced".
+      # Poll install list until the production installation reports Up-to-date, so
+      # a deploy that lands a version the install never adopts fails here
+      # (blocking) instead of surfacing only when someone opens Confluence. If no
+      # production installation is visible, this warns and passes rather than
+      # blocking on a state it cannot verify.
+      - name: Verify installed version advanced
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: node scripts/verify-deploy.mjs production --verify
