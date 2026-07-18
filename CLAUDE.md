@@ -78,7 +78,8 @@ Print before/after bundle sizes.
 
 **4. Confirm asset caching.** Verify the Vite build emits content-hashed
 filenames so the same Mermaid chunk is served once across iframes and reloads.
-Note the observed Forge CDN cache headers in the README.
+This is checkable from the build output itself (hashed filenames in
+`static/{view,config}/dist`); the README's immutable-cache note stands on that.
 
 ## Note on AGENTS.md
 The repo's `AGENTS.md` is a generic Forge-assistant persona that assumes
