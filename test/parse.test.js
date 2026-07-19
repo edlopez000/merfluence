@@ -29,6 +29,14 @@ import { describeError } from '../src/lib/render.js';
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const fixtures = readdirSync(fixturesDir).filter((f) => f.endsWith('.mmd'));
 
+// A few diagram grammars postdate major 10 (architecture-beta arrived in 11.1,
+// kanban in 11.3), so their keyword doesn't exist in mermaid-10 and parse()
+// throws "No diagram type detected". That's not a regression to catch — the type
+// simply isn't part of the pinned-v10 feature set — so skip those fixtures on any
+// major below their minimum rather than fail the leg. They still run on v11, so
+// nothing ships untested.
+const MIN_MAJOR = { 'kanban.mmd': 11, 'architecture.mmd': 11 };
+
 // Mirrors the registry's majors. Mermaid keeps parser state on the singleton,
 // so initialize each once here rather than per-test.
 const majors = [
@@ -46,7 +54,8 @@ describe.each(majors)('mermaid %s corpus still parses', (major, mermaid) => {
   });
 
   for (const file of fixtures) {
-    it(file, async () => {
+    const run = Number(major) < (MIN_MAJOR[file] ?? 0) ? it.skip : it;
+    run(file, async () => {
       const source = readFileSync(join(fixturesDir, file), 'utf8');
       await expect(mermaid.parse(source)).resolves.toBeTruthy();
     });

@@ -119,6 +119,15 @@ function Panel({ initial }) {
   const [dragging, setDragging] = useState(false);
   const dark = useMemo(() => resolveTheme(theme) === 'dark', [theme]);
 
+  // Which template the "Start from" picker shows. Derived from the source rather
+  // than stored, so it reflects the active template while the source still
+  // matches one, and falls back to the placeholder the moment you edit — which
+  // also lets you re-pick the same template to reload it.
+  const templateId = useMemo(
+    () => TEMPLATES.find((t) => t.source === source)?.id ?? '',
+    [source],
+  );
+
   // Load a .mmd or .md file dropped onto the editor. Reading and parsing happen
   // in the browser; nothing is uploaded.
   const onDropFile = useCallback(async (file) => {
@@ -268,11 +277,8 @@ function Panel({ initial }) {
         <label>
           Start from
           <select
-            defaultValue=""
-            onChange={(e) => {
-              insertTemplate(e.target.value);
-              e.target.value = '';
-            }}
+            value={templateId}
+            onChange={(e) => insertTemplate(e.target.value)}
           >
             <option value="" disabled>
               Choose a diagram type

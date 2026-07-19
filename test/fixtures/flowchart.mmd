@@ -1,6 +1,6 @@
 flowchart TD
-  A[Request] --> B{Authorized?}
-  B -- Yes --> C[Handle]
-  B -- No --> D[Reject]
-  C --> E[Respond]
-  D --> E
+    A[Start] --> B{Is it?}
+    B -- Yes --> C[OK]
+    C --> D[Rethink]
+    D --> B
+    B -- No ----> E[End]

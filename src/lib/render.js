@@ -32,6 +32,19 @@ function baseConfig({ theme, useMaxWidth }) {
     journey: { useMaxWidth },
     gantt: { useMaxWidth },
     pie: { useMaxWidth },
+    // The rest of the template types. Every section below exposes useMaxWidth in
+    // Mermaid 11, so the "Keep full width" toggle reaches them too. Keys absent in
+    // major 10 (kanban/architecture/block) are simply ignored there.
+    mindmap: { useMaxWidth },
+    timeline: { useMaxWidth },
+    gitGraph: { useMaxWidth },
+    quadrantChart: { useMaxWidth },
+    xyChart: { useMaxWidth },
+    sankey: { useMaxWidth },
+    c4: { useMaxWidth },
+    block: { useMaxWidth },
+    kanban: { useMaxWidth },
+    architecture: { useMaxWidth },
   };
 }
 

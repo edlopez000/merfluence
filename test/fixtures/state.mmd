@@ -1,6 +1,8 @@
 stateDiagram-v2
-  [*] --> Draft
-  Draft --> InReview
-  InReview --> Approved
-  InReview --> Draft
-  Approved --> [*]
+    [*] --> Still
+    Still --> [*]
+
+    Still --> Moving
+    Moving --> Still
+    Moving --> Crash
+    Crash --> [*]
