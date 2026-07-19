@@ -146,7 +146,13 @@
       }
 
       .toolbar {
-        position: absolute;
+        /* fixed, not absolute: with "keep full width" a wide diagram grows the
+           inline-block .root past the column and the iframe scrolls horizontally.
+           Anchored to .root, right:4px would sit at the far edge of the overflow
+           (off-screen until you scroll right); pinned to the viewport it stays in
+           the visible corner. The iframe auto-sizes to content height, so there's
+           no internal vertical scroll and top:4px behaves as before. */
+        position: fixed;
         top: 4px;
         right: 4px;
         display: flex;
@@ -224,7 +230,9 @@
          Absolute (not in flow) so it reserves no empty line; pointer-events none
          so it never swallows a drag that starts over it. */
       .meta {
-        position: absolute;
+        /* fixed for the same reason as .toolbar: stay in the visible bottom-left
+           corner when a full-width diagram scrolls the iframe horizontally. */
+        position: fixed;
         bottom: 4px;
         left: 4px;
         font-size: 11px;
