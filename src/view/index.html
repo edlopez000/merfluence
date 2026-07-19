@@ -65,6 +65,27 @@
         max-width: none;
       }
 
+      /* "Keep full width" with a diagram wider than the column: clip it to the
+         column and let the existing drag-pan reach the rest, rather than letting
+         it grow the macro. The body is width: fit-content, so an oversized
+         diagram otherwise stretches the whole macro past the column; the Forge
+         iframe then grows to match and Confluence scrolls the entire macro
+         horizontally — carrying the toolbar (anchored to .root's right edge) and
+         the version stamp out of view. Capping the frame to the column gives
+         .stage a definite width so its overflow: hidden actually clips; without a
+         definite width the diagram's intrinsic width bubbles up through the
+         fit-content body and re-stretches .root. Scoped with :has() so every
+         other case keeps the content-hugging fit-content sizing. */
+      html:has(.stage.no-shrink),
+      html:has(.stage.no-shrink) body {
+        width: 100%;
+      }
+      .root:has(.stage.no-shrink) {
+        display: block;
+        width: 100%;
+        min-width: 0;
+      }
+
       /* An explicit height chosen in the editor's Size dropdown (see SIZE_PRESETS
          in src/lib/sizing.js). The SVG scales to --diagram-height, keeping the
          aspect ratio from its viewBox; the .pan drops its column clamp so a
