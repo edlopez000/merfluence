@@ -1,0 +1,7 @@
+C4Context
+    title System Context diagram for Internet Banking System
+    Person(customerA, "Banking Customer A", "A customer of the bank.")
+    System(SystemAA, "Internet Banking System", "Allows customers to view their accounts.")
+    System_Ext(SystemE, "Mainframe Banking System", "Stores core banking information.")
+    Rel(customerA, SystemAA, "Uses")
+    Rel(SystemAA, SystemE, "Uses")

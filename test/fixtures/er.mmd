@@ -1,8 +1,4 @@
 erDiagram
-  WORK_ORDER ||--o{ QUOTE : has
-  QUOTE ||--o{ INVOICE : becomes
-  WORK_ORDER {
-    int id PK
-    int facility_id FK
-    string status
-  }
+    CUSTOMER ||--o{ ORDER : places
+    ORDER ||--|{ LINE-ITEM : contains
+    CUSTOMER }|..|{ DELIVERY-ADDRESS : uses

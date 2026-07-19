@@ -20,7 +20,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 
 ## Features
 
-- All major Mermaid diagram types — flowcharts, sequence, class, state, entity-relationship, Gantt, pie, and more
+- All major Mermaid diagram types — flowcharts, sequence, class, state, entity-relationship, Gantt, pie, mindmap, timeline, user journey, Git graph, quadrant, XY, Sankey, C4, block, kanban, architecture, and more, each with a starter template
 - A live editor with syntax highlighting, starter templates, and inline error reporting
 - Drag and drop a `.mmd` file, or a Markdown file containing a ` ```mermaid ` block, straight onto the editor
 - Automatic light/dark theming that follows Confluence
