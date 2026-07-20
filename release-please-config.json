@@ -5,18 +5,7 @@
       "release-type": "node",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
-      "pull-request-title-pattern": "chore: release ${version}",
-      "changelog-sections": [
-        { "type": "feat", "section": "Features" },
-        { "type": "fix", "section": "Bug Fixes" },
-        { "type": "perf", "section": "Performance" },
-        { "type": "refactor", "section": "Refactoring" },
-        { "type": "docs", "section": "Documentation" },
-        { "type": "test", "section": "Tests" },
-        { "type": "ci", "section": "CI" },
-        { "type": "build", "section": "Build" },
-        { "type": "chore", "section": "Dependencies & chores" }
-      ]
+      "pull-request-title-pattern": "chore: release ${version}"
     }
   }
 }
