@@ -96,7 +96,11 @@ forge deploy -e development
 forge install --product confluence -e development --site your-site.atlassian.net
 ```
 
-- `npm test` runs the parse-regression corpus.
+- `npm test` runs both test projects: the unit suite (jsdom, including the
+  parse-regression corpus) and a real-Chromium browser suite covering the full
+  render pipeline and an XSS end-to-end check. `npm run test:unit` and
+  `npm run test:browser` run one at a time; `npm run test:coverage` adds the
+  coverage gate CI enforces.
 - `forge lint` validates the manifest.
 - `forge tunnel` gives live reload against your development site.
 
@@ -111,14 +115,17 @@ src/lib/
   cache.js              SVG cache shape and size gate
   mermaid-file.js       Extract Mermaid from dropped .mmd / Markdown files
   templates.js          Starter diagrams
+  sizing.js             Diagram height presets (Natural/S/M/L)
+  zoom.js               Cursor- and centre-anchored zoom math
 src/view/               The macro as readers see it
-src/config/             The editor: CodeMirror, live preview, drag-and-drop
-test/                   Parse-only regression corpus and fixtures
+src/config/             The editor: CodeMirror (mermaid-lang.js), live preview, drag-and-drop
+test/                   Unit suite and parse-regression fixtures
+test/browser/           Chromium suite: render pipeline and XSS end-to-end
 ```
 
 ## Contributing
 
-Issues and pull requests are welcome. New diagram types should ship with a fixture in `test/fixtures/`, and the parse corpus must stay green (`npm test`) before changes are merged.
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and the release process. New diagram types should ship with a fixture in `test/fixtures/`, and the test suite must stay green (`npm test`) before changes are merged.
 
 ## License
 
