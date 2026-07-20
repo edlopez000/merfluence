@@ -7,6 +7,13 @@
 node_modules/
 dist/
 
+# Test coverage output
+coverage/
+
+# Vitest browser-mode artifacts (attachments + failure screenshots)
+.vitest-attachments/
+__screenshots__/
+
 # Compiled Java class files
 *.class
 
