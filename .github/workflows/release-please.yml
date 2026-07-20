@@ -1,0 +1,42 @@
+name: Release please
+
+# Versioning lives here, decoupled from deploys. Forge manifests carry no
+# version, so SemVer is tracked in package.json + git tags + CHANGELOG.md. On
+# each push to main, release-please reads the Conventional Commits since the last
+# v* tag and maintains a standing "chore: release X.Y.Z" PR that bumps the
+# version + accumulates the changelog. Merging THAT PR tags vX.Y.Z, cuts a GitHub
+# Release, and commits CHANGELOG.md. Nothing here publishes to npm (the package
+# is private) or deploys to Forge — mermaid-update.yml still owns the gated
+# staging -> production pipeline.
+#
+# The release PR only touches package.json / package-lock.json / CHANGELOG.md, so
+# it passes the required Diagram-corpus and Dependency-audit checks like any
+# other PR. Merging it does bump package.json, which is in mermaid-update.yml's
+# `shippable` filter, so a release re-deploys a byte-identical bundle — an
+# accepted, deliberate redeploy point, not a bug.
+
+on:
+  push:
+    branches: [main]
+
+# release-please opens/updates its release PR and, on merge, pushes tags and a
+# GitHub Release — so it needs write on both. Scoped to this workflow only.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Maintain release PR
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned like every action in this repo (see mermaid-update.yml).
+      # Renovate bumps the pin via the trailing version comment. Config lives in
+      # release-please-config.json; the last-released version in
+      # .release-please-manifest.json (bootstrapped to 1.0.0, anchored by the
+      # v1.0.0 tag).
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

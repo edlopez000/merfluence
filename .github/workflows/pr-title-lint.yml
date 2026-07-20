@@ -1,0 +1,32 @@
+name: PR title lint
+
+# The PR title is the enforcement point that matters: this repo squash-merges,
+# so the PR title becomes the squashed commit's subject on main — which is
+# exactly what release-please reads to compute the next SemVer bump and the
+# changelog entry (.github/workflows/release-please.yml). commitlint.config.js
+# enforces the same vocabulary locally via the husky commit-msg hook; this job
+# is the server-side backstop, including for Renovate PRs (renovate.json sets
+# semanticCommits so its titles conform).
+#
+# Trigger is `pull_request`, not `pull_request_target`: the title is in the
+# event payload, so no repository token is needed to read it, and a fork PR
+# never gets an elevated token here.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint-pr-title:
+    name: Lint PR title
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned like every action in this repo (see mermaid-update.yml): a tag
+      # is mutable and these run in a repo that also holds deploy credentials.
+      # Renovate bumps the pin using the trailing version comment.
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
