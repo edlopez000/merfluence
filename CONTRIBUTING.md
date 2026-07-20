@@ -1,0 +1,90 @@
+# Contributing to Merfluence
+
+Thanks for helping out. This file covers **commit conventions and the release
+process**. For the architecture and the constraints that define the app (the
+zero-scope manifest, client-side rendering, the three sanitization layers), read
+[CLAUDE.md](CLAUDE.md).
+
+## The one invariant
+
+Merfluence requests **no scopes, no egress, no resolver** — only
+`content.styles: unsafe-inline`. Never add a scope, an egress permission, or a
+backend to solve a problem. If a change seems to need one, open an issue first.
+`test/manifest.test.js` enforces this on every PR.
+
+## Development
+
+```sh
+npm install       # also installs the husky git hooks (via the prepare script)
+npm test          # vitest: parse corpus + unit + browser E2E
+npm run build     # both Vite bundles
+```
+
+Node: use a version inside the `engines` range in `package.json`. New diagram
+type → new fixture in `test/`.
+
+## Conventional Commits
+
+Commit messages **and pull-request titles** must follow
+[Conventional Commits](https://www.conventionalcommits.org/). This is enforced
+two ways:
+
+- **Locally** — a husky `commit-msg` hook runs commitlint
+  (`commitlint.config.js`) on every `git commit`.
+- **In CI** — [`pr-title-lint.yml`](.github/workflows/pr-title-lint.yml) checks
+  the PR title. Because we **squash-merge**, the PR title becomes the commit
+  subject on `main`, and that subject is what drives versioning and the
+  changelog. Keep the PR title conventional even if intermediate commits aren't.
+
+Format:
+
+```
+<type>(<optional scope>): <subject>
+```
+
+| Type       | Use for                                        | Version bump |
+| ---------- | ---------------------------------------------- | ------------ |
+| `feat`     | a user-facing feature                          | **minor**    |
+| `fix`      | a bug fix                                       | **patch**    |
+| `perf`     | a performance improvement                       | patch        |
+| `refactor` | code change that isn't a feature or fix         | none         |
+| `docs`     | documentation only                              | none         |
+| `test`     | tests only                                      | none         |
+| `ci`       | CI/workflow changes                             | none         |
+| `build`    | build system or tooling                         | none         |
+| `chore`    | maintenance, dependency bumps                   | none         |
+
+**Breaking changes** bump the **major** version. Mark them either with a `!`
+after the type (`feat!: …`) or with a `BREAKING CHANGE:` footer in the commit
+body.
+
+Examples:
+
+```
+feat: add a copy-as-PNG button to the reader toolbar
+fix: anchor wheel-zoom on the cursor instead of the frame
+feat(render)!: drop the deprecated inline theme override
+```
+
+Renovate PRs are titled automatically (`chore(deps): …`) via `renovate.json`, so
+dependency bumps conform without manual effort.
+
+## Releases
+
+Releases are automated with
+[release-please](https://github.com/googleapis/release-please) — you don't bump
+the version or edit the changelog by hand:
+
+1. Merge conventional PRs to `main` as usual.
+2. release-please maintains a standing **`chore: release X.Y.Z`** pull request
+   that accumulates the changelog and computes the next
+   [SemVer](https://semver.org/) version from the commit types since the last
+   release.
+3. A maintainer merges that release PR. release-please then tags `vX.Y.Z`, cuts a
+   GitHub Release, and commits the updated [CHANGELOG.md](CHANGELOG.md).
+
+Versioning is intentionally **decoupled from deployment**: Forge manifests carry
+no version, so the deploy pipeline in
+[`mermaid-update.yml`](.github/workflows/mermaid-update.yml) ships shipped-code
+changes independently, while tags and the changelog track the product's SemVer
+history.

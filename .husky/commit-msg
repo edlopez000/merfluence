@@ -1,0 +1,4 @@
+# Reject commit messages that aren't Conventional Commits, before they reach a
+# PR. --no-install matches the repo's stance everywhere else (CI, deploy): use
+# the pinned devDependency, never fetch tooling off the network mid-run.
+npx --no-install commitlint --edit "$1"
