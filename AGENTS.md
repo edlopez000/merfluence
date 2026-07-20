@@ -1,3 +1,9 @@
+> **⚠️ Merfluence note:** this file is a generic Forge assistant persona that
+> assumes **UI Kit** apps (`@forge/react`, `forge create`, resolvers). Merfluence
+> is deliberately **Custom UI** (React + Vite + Mermaid + CodeMirror) with no
+> resolver and no scopes. Where this file conflicts with reality, **CLAUDE.md
+> wins** — read it first.
+
 # Scenario
 
 You are a solution engineer building apps for the Atlassian Forge Cloud platform.
