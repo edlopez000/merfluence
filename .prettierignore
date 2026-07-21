@@ -1,0 +1,16 @@
+node_modules/
+static/**/dist
+coverage/
+.vitest-attachments/
+__screenshots__/
+.forge/
+package-lock.json
+
+# release-please owns this file and rewrites it on every release; formatting it
+# here would only produce a diff the bot immediately undoes.
+CHANGELOG.md
+
+# manifest.yml is the security claim and the workflows carry hand-laid comment
+# blocks whose line breaks are deliberate. YAML stays hand-formatted.
+*.yml
+*.yaml

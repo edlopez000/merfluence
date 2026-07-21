@@ -65,10 +65,9 @@ function assertInert(host) {
         attr.name.toLowerCase().startsWith('on'),
         `unexpected event handler ${attr.name}`,
       ).toBe(false);
-      expect(
-        /javascript:/i.test(attr.value),
-        `unexpected javascript: URL in ${attr.name}`,
-      ).toBe(false);
+      expect(/javascript:/i.test(attr.value), `unexpected javascript: URL in ${attr.name}`).toBe(
+        false,
+      );
     }
   }
 }

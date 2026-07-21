@@ -1,0 +1,5 @@
+# Lint and format the staged files, and re-stage what got fixed, so style never
+# reaches a PR. A real lint error still fails the commit. --no-install matches
+# the repo's stance everywhere else (CI, deploy): use the pinned devDependency,
+# never fetch tooling off the network mid-run.
+npx --no-install lint-staged

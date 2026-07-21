@@ -18,10 +18,23 @@
     "test:browser": "vitest run --project browser",
     "test:browser:headed": "vitest --project browser --browser.headless=false",
     "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint:forge": "forge lint",
     "deploy:staging": "npm run build && forge deploy -e staging",
     "deploy:production": "npm run build && forge deploy -e production",
     "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,jsx,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,html}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@codemirror/commands": "^6.7.1",
@@ -40,6 +53,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",
     "@commitlint/config-conventional": "^21.2.0",
+    "@eslint/js": "^9.39.5",
     "@forge/cli": "13.1.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -49,9 +63,16 @@
     "@vitest/browser-playwright": "^4.1.10",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
     "husky": "^9.1.7",
     "jsdom": "^29.0.0",
+    "lint-staged": "^16.4.0",
     "playwright": "^1.61.1",
+    "prettier": "^3.9.6",
     "vite": "^8.0.0",
     "vitest": "^4.0.0",
     "yaml": "^2.9.0"

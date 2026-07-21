@@ -23,6 +23,29 @@ npm run build     # both Vite bundles
 Node: use a version inside the `engines` range in `package.json`. New diagram
 type → new fixture in `test/`.
 
+## Linting and formatting
+
+```sh
+npm run lint          # ESLint over src/, test/, scripts/, build configs
+npm run lint:fix      # …and apply the auto-fixable ones
+npm run format:check  # Prettier, check only
+npm run format        # Prettier, write
+```
+
+The split is deliberate: **ESLint judges correctness, Prettier owns formatting.**
+`eslint-config-prettier` is last in [`eslint.config.js`](eslint.config.js), so
+ESLint never reports a style opinion the formatter would just overwrite.
+
+You rarely need to run either by hand. The husky **`pre-commit`** hook runs
+`lint-staged`, which applies `eslint --fix` and `prettier --write` to your staged
+files and re-stages the result; a lint error that can't be auto-fixed fails the
+commit. CI runs the same two checks in the `Lint` job on every PR.
+
+`manifest.yml` and the workflow files are **not** formatted (`*.yml` is in
+`.prettierignore`) — the manifest is the security claim and the workflow comment
+blocks are hand-laid. `npm run lint:forge` is unrelated: it validates the Forge
+manifest, needs Atlassian credentials, and runs only in the deploy job.
+
 ## Conventional Commits
 
 Commit messages **and pull-request titles** must follow
@@ -42,17 +65,17 @@ Format:
 <type>(<optional scope>): <subject>
 ```
 
-| Type       | Use for                                        | Version bump |
-| ---------- | ---------------------------------------------- | ------------ |
-| `feat`     | a user-facing feature                          | **minor**    |
-| `fix`      | a bug fix                                       | **patch**    |
-| `perf`     | a performance improvement                       | patch        |
-| `refactor` | code change that isn't a feature or fix         | none         |
-| `docs`     | documentation only                              | none         |
-| `test`     | tests only                                      | none         |
-| `ci`       | CI/workflow changes                             | none         |
-| `build`    | build system or tooling                         | none         |
-| `chore`    | maintenance, dependency bumps                   | none         |
+| Type       | Use for                                 | Version bump |
+| ---------- | --------------------------------------- | ------------ |
+| `feat`     | a user-facing feature                   | **minor**    |
+| `fix`      | a bug fix                               | **patch**    |
+| `perf`     | a performance improvement               | patch        |
+| `refactor` | code change that isn't a feature or fix | none         |
+| `docs`     | documentation only                      | none         |
+| `test`     | tests only                              | none         |
+| `ci`       | CI/workflow changes                     | none         |
+| `build`    | build system or tooling                 | none         |
+| `chore`    | maintenance, dependency bumps           | none         |
 
 **Breaking changes** bump the **major** version. Mark them either with a `!`
 after the type (`feat!: …`) or with a `BREAKING CHANGE:` footer in the commit
