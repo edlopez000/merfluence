@@ -22,8 +22,7 @@ function baseConfig({ theme, useMaxWidth }) {
     securityLevel: 'strict',
     htmlLabels: false,
     theme: theme === 'dark' ? 'dark' : 'default',
-    fontFamily:
-      'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     flowchart: { htmlLabels: false, useMaxWidth },
     sequence: { useMaxWidth },
     class: { htmlLabels: false, useMaxWidth },

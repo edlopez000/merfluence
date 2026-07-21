@@ -534,8 +534,8 @@ function App() {
   if (state.status === 'empty') {
     return (
       <div className="message empty">
-        No diagram yet. Select the macro and choose <strong>Edit diagram</strong> to write
-        some Mermaid.
+        No diagram yet. Select the macro and choose <strong>Edit diagram</strong> to write some
+        Mermaid.
       </div>
     );
   }

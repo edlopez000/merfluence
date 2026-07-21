@@ -95,8 +95,7 @@ function listInstallations(environment) {
 }
 
 const isUpToDate = (inst) => /up-to-date/i.test(inst.status || '');
-const describe = (insts) =>
-  insts.map((i) => `${i.site}@${i.appVersion} (${i.status})`).join(', ');
+const describe = (insts) => insts.map((i) => `${i.site}@${i.appVersion} (${i.status})`).join(', ');
 
 async function snapshot(environment) {
   let insts = [];
@@ -145,9 +144,7 @@ async function verify(environment) {
       return 0;
     }
 
-    console.log(
-      `attempt ${attempt}/${POLL_ATTEMPTS}: not yet up-to-date — ${describe(insts)}`,
-    );
+    console.log(`attempt ${attempt}/${POLL_ATTEMPTS}: not yet up-to-date — ${describe(insts)}`);
     if (attempt < POLL_ATTEMPTS) await sleep(POLL_INTERVAL_MS);
   }
 
@@ -157,6 +154,5 @@ async function verify(environment) {
   return 1;
 }
 
-const exitCode =
-  modeArg === '--snapshot' ? await snapshot(envArg) : await verify(envArg);
+const exitCode = modeArg === '--snapshot' ? await snapshot(envArg) : await verify(envArg);
 process.exit(exitCode ?? 0);

@@ -72,6 +72,34 @@ jobs:
           node -p "'auto/11 -> ' + require('./node_modules/mermaid/package.json').version" >> "$GITHUB_STEP_SUMMARY"
           node -p "'pinned 10 -> ' + require('./node_modules/mermaid-10/package.json').version" >> "$GITHUB_STEP_SUMMARY"
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned for the same reason as every other action in this file: a tag
+      # is mutable. Renovate bumps these using the trailing version comment.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
+          # regression in 22.23.x. Not strictly needed to run ESLint, but every
+          # job here installs from the same lockfile, and a second Node version
+          # in the matrix is a second cache key and a second thing to debug.
+          node-version: 22.22.3
+          cache: npm
+      - run: npm ci
+      # `lint` is ESLint over src/, test/, scripts/ and the build configs; it is
+      # NOT `lint:forge`, which validates the manifest, needs Atlassian
+      # credentials, and therefore runs only in the staging job. This job holds
+      # no environment and no FORGE_* secrets.
+      - name: ESLint
+        run: npm run lint
+      # Formatting is Prettier's alone (eslint-config-prettier is last in
+      # eslint.config.js), so it gets its own step: a failure here means "run
+      # npm run format", never "fix a bug".
+      - name: Prettier
+        run: npm run format:check
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest

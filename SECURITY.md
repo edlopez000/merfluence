@@ -60,7 +60,7 @@ Anything that breaks one of those claims, including:
   authored by anyone who can edit a page and rendered for everyone who can read
   it, so this is the boundary that matters most. Three independent layers stand
   behind it — Mermaid's `securityLevel: 'strict'`, `htmlLabels: false`, and
-  DOMPurify over the emitted SVG — and a break in any *one* of them is a valid
+  DOMPurify over the emitted SVG — and a break in any _one_ of them is a valid
   report even if the other two happen to contain it.
 - **Anything that causes data to leave the page** — a network request to any
   host, a diagram's source reaching a third party, or a way to make the app
@@ -76,7 +76,7 @@ Anything that breaks one of those claims, including:
 - Findings that require a Confluence account already able to edit the page, and
   achieve nothing that editing the page would not already allow. A page editor
   can already write arbitrary page content; the interesting question is what a
-  *reader* is exposed to.
+  _reader_ is exposed to.
 - Advisories against development-only dependencies (`vitest`, `vite`,
   `@forge/cli`). Nothing in `devDependencies` reaches a customer's browser —
   only the runtime bundle ships. This is why CI audits with `--omit=dev`.

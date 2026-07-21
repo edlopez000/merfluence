@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
@@ -123,10 +123,7 @@ function Panel({ initial }) {
   // than stored, so it reflects the active template while the source still
   // matches one, and falls back to the placeholder the moment you edit — which
   // also lets you re-pick the same template to reload it.
-  const templateId = useMemo(
-    () => TEMPLATES.find((t) => t.source === source)?.id ?? '',
-    [source],
-  );
+  const templateId = useMemo(() => TEMPLATES.find((t) => t.source === source)?.id ?? '', [source]);
 
   // Load a .mmd or .md file dropped onto the editor. Reading and parsing happen
   // in the browser; nothing is uploaded.
@@ -245,8 +242,18 @@ function Panel({ initial }) {
   const save = async () => {
     let cacheFields = { cacheV: CACHE_VERSION };
     try {
-      const light = await renderDiagram({ source, versionPref: mermaidVersion, theme: 'light', useMaxWidth });
-      const dark = await renderDiagram({ source, versionPref: mermaidVersion, theme: 'dark', useMaxWidth });
+      const light = await renderDiagram({
+        source,
+        versionPref: mermaidVersion,
+        theme: 'light',
+        useMaxWidth,
+      });
+      const dark = await renderDiagram({
+        source,
+        versionPref: mermaidVersion,
+        theme: 'dark',
+        useMaxWidth,
+      });
       cacheFields = buildCacheFields(light.svg, dark.svg);
     } catch {
       cacheFields = { cacheV: CACHE_VERSION };
@@ -267,8 +274,8 @@ function Panel({ initial }) {
           <div className="drop-overlay-inner">
             <strong>Drop to load your diagram</strong>
             <span>
-              The file is read here in your browser and turned into the diagram —
-              it isn&rsquo;t opened or uploaded anywhere.
+              The file is read here in your browser and turned into the diagram — it isn&rsquo;t
+              opened or uploaded anywhere.
             </span>
           </div>
         </div>
@@ -276,10 +283,7 @@ function Panel({ initial }) {
       <div className="controls">
         <label>
           Start from
-          <select
-            value={templateId}
-            onChange={(e) => insertTemplate(e.target.value)}
-          >
+          <select value={templateId} onChange={(e) => insertTemplate(e.target.value)}>
             <option value="" disabled>
               Choose a diagram type
             </option>

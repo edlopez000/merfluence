@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  renderDiagram,
-  measureSvg,
-  sanitizeSvg,
-} from '../../src/lib/render.js';
+import { renderDiagram, measureSvg, sanitizeSvg } from '../../src/lib/render.js';
 
 /**
  * The end-to-end render, which the jsdom corpus cannot reach.
@@ -125,9 +121,7 @@ describe('parse-before-render invariant', () => {
     await renderDiagram({ source: fixtures.flowchart });
     // The temp element render() uses carries a dmmd-/mmd- id; it must be gone
     // once the promise resolves, whether or not we mounted the result.
-    expect(
-      document.querySelector('body > div[id^="dmmd-"], body > div[id^="mmd-"]'),
-    ).toBeNull();
+    expect(document.querySelector('body > div[id^="dmmd-"], body > div[id^="mmd-"]')).toBeNull();
   });
 });
 

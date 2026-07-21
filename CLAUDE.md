@@ -4,6 +4,7 @@ Merfluence is a free, open-source **Confluence Cloud macro** (Atlassian Forge,
 **Custom UI**) that renders **Mermaid** diagrams entirely in the browser.
 
 ## The invariant that defines this app
+
 The manifest requests **no `scopes`, no `external`, no `function`/resolver**.
 The only permission is `content.styles: unsafe-inline`, because Mermaid writes
 inline styles onto the SVG it generates. This zero-scope, zero-egress,
@@ -13,6 +14,7 @@ no-backend posture **IS the product**.
 > If a task seems to need one, **stop and tell the user.**
 
 ## Where the code lives
+
 ```
 manifest.yml              Forge descriptor — the security claim lives here
 src/lib/
@@ -30,6 +32,7 @@ src/config/               Editor: CodeMirror, live preview, error gutter;
 test/                     Unit suite (jsdom) + parse corpus (test/fixtures/*.mmd)
 test/browser/             Real-Chromium suite: full render pipeline + XSS E2E
 ```
+
 Build: two Vite bundles → `static/{view,config}/dist`. Test: `vitest run` runs
 two projects — the jsdom unit suite (including `test/parse.test.js`, which runs
 the fixture corpus through `mermaid.parse()` on both majors) and a Playwright
@@ -37,6 +40,7 @@ Chromium suite that exercises the real render pipeline and drives XSS payloads
 end-to-end. `npm run test:coverage` enforces the v8 coverage thresholds in CI.
 
 ## Hard constraints (keep true in every change)
+
 - Rendering stays **client-side**; diagram source lives only in macro config.
 - Keep `securityLevel: 'strict'`, `htmlLabels: false`, and **DOMPurify** on all
   rendered SVG. The three layers are independent; any one failing must not open
@@ -46,11 +50,12 @@ end-to-end. `npm run test:coverage` enforces the v8 coverage thresholds in CI.
 - Don't break the version-pinning registry (`src/lib/mermaid-registry.js`).
 
 ## Working style
+
 - Before any large edit, give a short plan and the files to be touched. **Wait
   for go-ahead on anything that changes the config schema.**
 - After each numbered task: run `npm test`, `npm run build`, and `forge lint`;
   report results.
-- Comments explain *why*, matching existing style. Don't reformat files not
+- Comments explain _why_, matching existing style. Don't reformat files not
   being changed.
 
 ## Roadmap (in order)
@@ -95,6 +100,7 @@ is served once across iframes and reloads. The README's immutable-cache note
 stands on that.
 
 ## Note on AGENTS.md
+
 The repo's `AGENTS.md` is a generic Forge-assistant persona that assumes
 **UI Kit** apps (`@forge/react` only, no Custom UI, `forge create`). Merfluence
 is deliberately **Custom UI** (React + Vite + Mermaid + CodeMirror). Where the

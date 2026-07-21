@@ -129,4 +129,4 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) 
 
 ## License
 
-[Apache 2.0](LICENSE) © Edward Lopez-Ramos. 
+[Apache 2.0](LICENSE) © Edward Lopez-Ramos.

@@ -98,8 +98,7 @@ describe('save', () => {
     h.renderDiagram.mockImplementation(({ theme }) => {
       if (theme === 'light') {
         return new Promise((resolve) => {
-          releaseLight = () =>
-            resolve({ svg: '<svg data-theme="light"><rect/></svg>' });
+          releaseLight = () => resolve({ svg: '<svg data-theme="light"><rect/></svg>' });
         });
       }
       darkStarted = true;
