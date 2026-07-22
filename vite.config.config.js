@@ -12,5 +12,12 @@ export default defineConfig({
     emptyOutDir: true,
     target: 'es2020',
     chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        // Name the entry chunk `entry-[hash]` so the size-limit budget can
+        // glob it unambiguously (see vite.view.config.js for the full why).
+        entryFileNames: 'assets/entry-[hash].js',
+      },
+    },
   },
 });

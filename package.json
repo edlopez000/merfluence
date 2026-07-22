@@ -18,6 +18,7 @@
     "test:browser": "vitest run --project browser",
     "test:browser:headed": "vitest --project browser --browser.headless=false",
     "test:coverage": "vitest run --coverage",
+    "size": "size-limit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -55,6 +56,7 @@
     "@commitlint/config-conventional": "^21.2.0",
     "@eslint/js": "^9.39.5",
     "@forge/cli": "13.1.0",
+    "@size-limit/file": "^12.1.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -73,6 +75,7 @@
     "lint-staged": "^17.0.0",
     "playwright": "^1.61.1",
     "prettier": "^3.9.6",
+    "size-limit": "^12.1.0",
     "vite": "^8.0.0",
     "vitest": "^4.0.0",
     "yaml": "^2.9.0"
