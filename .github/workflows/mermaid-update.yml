@@ -124,6 +124,31 @@ jobs:
       # Forge artifact.
       - run: npm audit --omit=dev --audit-level=high
 
+  size:
+    name: Bundle size budget
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned like every action in this file: a tag is mutable. Renovate
+      # bumps these using the trailing version comment.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          # Pinned to 22.22.3 for lockfile-cache parity with the other jobs, not
+          # because size-limit needs it -- see the corpus job for the 22.23.x
+          # node-fetch regression this pin avoids.
+          node-version: 22.22.3
+          cache: npm
+      - run: npm ci
+      # size-limit reads the built entry chunks, so the bundles must exist first.
+      # It measures ONLY the `entry-*` chunks (see .size-limit.js) -- the JS the
+      # iframe loads before any diagram renders -- and fails the PR if either
+      # entry crosses its budget, catching a deferred engine (Cytoscape/KaTeX/
+      # ELK) accidentally folded into initial load, or an entry-inflating bump.
+      - name: Build bundles
+        run: npm run build
+      - name: Check bundle size
+        run: npm run size
+
   # Did this push touch anything that actually ships? A change confined to CI,
   # tests, or docs produces a byte-identical Forge bundle, so deploying it burns a
   # production approval for nothing — and trains the reviewer to approve without

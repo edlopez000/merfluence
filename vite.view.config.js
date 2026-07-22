@@ -24,5 +24,15 @@ export default defineConfig({
     // Mermaid is large. It loads as its own chunk, fetched from the app's
     // own origin (the Forge CDN), never a third-party CDN.
     chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        // Name the entry chunk `entry-[hash]` so the size-limit budget can
+        // glob it unambiguously. A bare `index-*` glob would also match
+        // Mermaid's lazily-loaded `index-*` internal chunk, folding a deferred
+        // engine into the initial-load budget. The [hash] keeps filenames
+        // content-addressed for the immutable-cache guarantee.
+        entryFileNames: 'assets/entry-[hash].js',
+      },
+    },
   },
 });
