@@ -25,7 +25,7 @@ use any version inside the `engines` range in `package.json`. That range
 deliberately excludes `22.23.x`: on it the Forge CLI throws
 `ERR_STREAM_PREMATURE_CLOSE` (nodejs/node#63989, Atlassian FRGE-1750), which
 would fail `forge lint`/`forge deploy` — see the comment in
-`.github/workflows/mermaid-update.yml`. New diagram type → new fixture in
+`.github/workflows/ci.yml`. New diagram type → new fixture in
 `test/`.
 
 ## Linting and formatting
@@ -113,6 +113,6 @@ the version or edit the changelog by hand:
 
 Versioning is intentionally **decoupled from deployment**: Forge manifests carry
 no version, so the deploy pipeline in
-[`mermaid-update.yml`](.github/workflows/mermaid-update.yml) ships shipped-code
+[`ci.yml`](.github/workflows/ci.yml) ships shipped-code
 changes independently, while tags and the changelog track the product's SemVer
 history.

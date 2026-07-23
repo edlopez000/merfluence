@@ -5,7 +5,7 @@
 // bundled and shipped to customer browsers.
 //
 // Why this exists (deploy-gating security surface — change deliberately):
-// the `changes` job in .github/workflows/mermaid-update.yml decides whether a
+// the `changes` job in .github/workflows/ci.yml decides whether a
 // push to main ships. Listing package.json / package-lock.json as whole-file
 // path globs over-triggers: a devDependencies/scripts-only edit produces a
 // byte-identical Forge bundle yet still burns a production approval on a no-op.
