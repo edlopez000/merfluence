@@ -20,8 +20,13 @@ npm test          # vitest: parse corpus + unit + browser E2E
 npm run build     # both Vite bundles
 ```
 
-Node: use a version inside the `engines` range in `package.json`. New diagram
-type → new fixture in `test/`.
+Node: run `nvm use` to land on the CI-tested line (`.nvmrc` pins `22.22.3`), or
+use any version inside the `engines` range in `package.json`. That range
+deliberately excludes `22.23.x`: on it the Forge CLI throws
+`ERR_STREAM_PREMATURE_CLOSE` (nodejs/node#63989, Atlassian FRGE-1750), which
+would fail `forge lint`/`forge deploy` — see the comment in
+`.github/workflows/mermaid-update.yml`. New diagram type → new fixture in
+`test/`.
 
 ## Linting and formatting
 

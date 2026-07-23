@@ -51,6 +51,16 @@ end-to-end. `npm run test:coverage` enforces the v8 coverage thresholds in CI.
 
 ## Working style
 
+- **When pulling in new work (a GitHub issue, a feature, any fresh task), start
+  by cutting a feature branch off `main`** — never commit new work straight to
+  `main`. Prefix the branch with a Conventional Commit **type** so the eventual
+  PR title / squash-commit subject passes commitlint (`commitlint.config.js`,
+  and the PR-title CI job): `feat/…`, `fix/…`, `build/…`, `chore/…`, `docs/…`,
+  `ci/…`, etc. Pick the type deliberately — release-please only cuts a release
+  on `feat` (minor) and `fix` (patch); everything else is non-releasing. Tooling
+  / build-metadata work (e.g. narrowing `engines.node`) is `build:`, **not**
+  `fix:`, so it doesn't trigger a spurious release. Example:
+  `build/38-narrow-engines-node`.
 - Before any large edit, give a short plan and the files to be touched. **Wait
   for go-ahead on anything that changes the config schema.**
 - After each numbered task: run `npm test`, `npm run build`, and `forge lint`;
