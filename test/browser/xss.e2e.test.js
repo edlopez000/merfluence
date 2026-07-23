@@ -72,6 +72,33 @@ function assertInert(host) {
   }
 }
 
+/**
+ * No attribute references an external network host — the egress guard. An
+ * external <image href> or a style url(http…) would fetch when painted, leaking
+ * the reader's IP/UA to an arbitrary host. Internal url(#id) refs are fine.
+ */
+function assertNoExternalRefs(host) {
+  const external = /^\s*(?:https?:)?\/\//i;
+  const externalUrlFn = /url\(\s*['"]?\s*(?:https?:)?\/\//i;
+  for (const el of host.querySelectorAll('*')) {
+    for (const attr of el.attributes) {
+      // xmlns/xmlns:* are namespace identifiers, not fetched — ignore them.
+      if (attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
+      // src/href fetch their target directly.
+      if (/^(?:xlink:)?(?:href|src)$/i.test(attr.name)) {
+        expect(external.test(attr.value), `unexpected external ${attr.name}="${attr.value}"`).toBe(
+          false,
+        );
+      }
+      // Any attribute (style or a presentation paint) may carry a url() ref.
+      expect(
+        externalUrlFn.test(attr.value),
+        `unexpected external url() in ${attr.name}="${attr.value}"`,
+      ).toBe(false);
+    }
+  }
+}
+
 // Payloads that parse as valid Mermaid but carry an attack in attacker-authored
 // positions: node labels, edge labels, and click/link directives. Each aims at
 // a different layer, and all funnel through renderDiagram.
@@ -125,6 +152,9 @@ describe('tampered cached SVG stays inert end-to-end', () => {
     'onload on the root svg': `<svg xmlns="http://www.w3.org/2000/svg" onload="window.__pwn()"><rect width="10" height="10"/></svg>`,
     'javascript: xlink:href': `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="javascript:window.__pwn()"><text>go</text></a></svg>`,
     'img onerror smuggled via foreignObject': `<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><img src=x onerror="window.__pwn()"></foreignObject></svg>`,
+    // Egress vectors: no script, but a fetch when painted. See assertNoExternalRefs.
+    'external image href tracking pixel': `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/pixel.png" width="1" height="1"/></svg>`,
+    'external url() in a style fill': `<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:url(https://evil.example/f.svg#p)" width="10" height="10"/></svg>`,
   };
 
   for (const [name, markup] of Object.entries(TAMPERED)) {
@@ -134,6 +164,7 @@ describe('tampered cached SVG stays inert end-to-end', () => {
 
       expect(window.__pwned, 'a tampered payload executed').toBe(false);
       assertInert(host);
+      assertNoExternalRefs(host);
       // foreignObject is stripped wholesale (htmlLabels is off, so nothing
       // legitimate lives in one).
       expect(host.querySelector('foreignObject')).toBeNull();
