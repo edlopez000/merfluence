@@ -1,0 +1,71 @@
+name: CodeQL
+
+# Static analysis (SAST) over our own source. This app's whole pitch is a
+# client-side security boundary — zero scopes, zero egress, three independent
+# sanitization layers (securityLevel:'strict' + htmlLabels:false + DOMPurify) —
+# so the source that implements that boundary is exactly what deserves a
+# machine reading it for injection, prototype-pollution, unsafe-DOM, and
+# taint-flow bugs. The other workflows gate deploys, audit dependencies, and
+# keep releases honest; none of them look at the code itself. CodeQL's findings
+# land in Security -> Code scanning.
+#
+# This is a CI-only workflow: it touches no src/, no manifest.yml, and no
+# dependency, so it costs no scope and cannot change the shipped bundle.
+
+on:
+  # No paths filter, on purpose — same reasoning as mermaid-update.yml's required
+  # checks: CodeQL should read every PR, and if it is ever made a required check,
+  # a paths-filtered run that skips would block the PR forever.
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, Monday 06:30 — offset from mermaid-update.yml's 06:00 so the two
+    # scheduled runs don't start in the same minute. Catches a new CodeQL query
+    # (the query pack updates independently of our code) flagging code that was
+    # already on main.
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+# Least-privilege default: read-only for every job's GITHUB_TOKEN. The analyze
+# job below elevates to exactly what CodeQL needs; nothing else here writes.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    # Scoped elevation: security-events:write uploads the SARIF results,
+    # actions:read lets CodeQL read this run's workflow metadata. contents:read
+    # is the checkout. No packages / no wider scope.
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      # One language, but keep the matrix shape so adding a pack later is a
+      # one-line change. fail-fast:false so a second language wouldn't cancel
+      # the first's results.
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      # SHA-pinned like every action in this repo (see mermaid-update.yml): a tag
+      # is mutable, and these run in a repo that also holds deploy credentials.
+      # Renovate bumps the pins using the trailing version comment.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: ${{ matrix.language }}
+          # build-mode:none — JS/TS is analyzed straight from source, so there is
+          # no compile step to observe. That is why this workflow needs no npm ci,
+          # no build, and no Node pin (unlike the deploy jobs pinned to 22.22.3).
+          build-mode: none
+          # Default query suite (not security-extended): a low-noise baseline that
+          # keeps main clean. Extended can be layered in once this is proven clear.
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: '/language:${{ matrix.language }}'
