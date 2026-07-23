@@ -163,30 +163,86 @@ jobs:
     permissions:
       contents: read
     outputs:
-      shippable: ${{ steps.filter.outputs.shippable }}
+      shippable: ${{ steps.decide.outputs.shippable }}
     steps:
       # dorny diffs a push against github.event.before, so it needs the base
       # commit checked out (a PR would not). Same SHA pin as everywhere else.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      # SHA-pinned like every action here; v4.0.2 was 15 days old at adoption, so
-      # it had cleared our own 14-day cooldown (renovate.json). The allow-list is
-      # the shipping surface: shippable == 'true' iff at least one changed file
-      # matches. Anything not listed (.github, test, scripts, docs, *.md,
-      # renovate.json, vitest.config.js) does not ship and does not deploy. This
-      # is fail-CLOSED — a NEW shipping path nobody adds here would be skipped, not
-      # shipped — so keep the list current; it is the one thing that must not drift.
+      # Two allow-lists, because the shipping surface has two kinds of entry.
+      #
+      #   code — files that ARE the bundle. Any change here ships, full stop. This
+      #          is fail-CLOSED: a NEW shipping path nobody adds here would be
+      #          skipped, not shipped, so keep it current — it must not drift.
+      #   pkg  — the dependency manifests. A path match here is NECESSARY but not
+      #          SUFFICIENT: editing devDependencies/scripts leaves the shipped
+      #          bundle byte-identical. So a pkg-only change is settled by content
+      #          in the `decide` step below, not by the path alone.
+      #
+      # Everything unlisted (.github, test, scripts, docs, *.md, renovate.json,
+      # vitest.config.js) neither ships nor deploys. SHA-pinned like every action
+      # here; v4.0.2 was 15 days old at adoption, clearing our 14-day cooldown.
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         id: filter
         with:
           filters: |
-            shippable:
+            code:
               - 'src/**'
               - 'manifest.yml'
-              - 'package.json'
-              - 'package-lock.json'
+              - 'static/**'
               - 'vite.view.config.js'
               - 'vite.config.config.js'
-              - 'static/**'
+            pkg:
+              - 'package.json'
+              - 'package-lock.json'
+      # Settle shippability. A `code` change always ships. A `pkg`-only change
+      # ships only if the PRODUCTION (non-dev) dependency closure actually moved —
+      # so a devDependencies/scripts/lockfile-dev-churn edit is correctly skipped,
+      # while an in-range runtime bump (e.g. Mermaid 11.4.x → 11.5.0, which lands
+      # lockfile-only and never touches package.json's `dependencies`) still ships.
+      # scripts/prod-deps-fingerprint.mjs is the authority; see its header.
+      #
+      # Fail-CLOSED throughout: any inability to compare the before/after closure
+      # (no resolvable before-commit, an unreachable SHA, a missing or unparseable
+      # lockfile) errs toward shipping. Only two clean, equal fingerprints skip.
+      #
+      # Runs on the runner's preinstalled Node: the script is dependency-free (Node
+      # builtins only), so this security-sensitive gate needs no `npm ci` — one
+      # fewer thing installed next to a deploy decision.
+      - name: Decide shippability
+        id: decide
+        env:
+          CODE: ${{ steps.filter.outputs.code }}
+          PKG: ${{ steps.filter.outputs.pkg }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          emit() { echo "shippable=$1" >> "$GITHUB_OUTPUT"; echo "shippable=$1"; }
+
+          # A file that IS the bundle changed — ship, no content check needed.
+          if [ "$CODE" = "true" ]; then emit true; exit 0; fi
+          # Nothing shipped and no dependency manifest touched — nothing to ship.
+          if [ "$PKG" != "true" ]; then emit false; exit 0; fi
+
+          # package.json / package-lock.json changed: compare production closures.
+          zero=0000000000000000000000000000000000000000
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$zero" ]; then
+            echo "no resolvable before-commit; shipping (fail-closed)"; emit true; exit 0
+          fi
+          if ! git fetch --depth=1 origin "$BEFORE" 2>/dev/null; then
+            echo "could not fetch before-commit $BEFORE; shipping (fail-closed)"; emit true; exit 0
+          fi
+          if ! git show "$BEFORE:package-lock.json" > /tmp/before-lock.json 2>/dev/null; then
+            echo "no before package-lock.json; shipping (fail-closed)"; emit true; exit 0
+          fi
+          before_fp=$(node scripts/prod-deps-fingerprint.mjs /tmp/before-lock.json) \
+            || { echo "before fingerprint failed; shipping (fail-closed)"; emit true; exit 0; }
+          after_fp=$(node scripts/prod-deps-fingerprint.mjs package-lock.json) \
+            || { echo "after fingerprint failed; shipping (fail-closed)"; emit true; exit 0; }
+          if [ "$before_fp" = "$after_fp" ]; then
+            echo "production dependency closure unchanged ($after_fp); skipping deploy"; emit false
+          else
+            echo "production dependency closure changed ($before_fp -> $after_fp); shipping"; emit true
+          fi
 
   staging:
     name: Deploy to staging
