@@ -252,10 +252,16 @@ jobs:
 
   staging:
     name: Deploy to staging
-    needs: [corpus, audit, changes]
+    # Every quality gate is a hard dependency: corpus (tests+coverage+build), lint
+    # (ESLint + Prettier), size (bundle-size budget), and audit. A failure in any
+    # skips this job — and, via needs: [staging], production too. lint and size are
+    # load-bearing here, not just on PRs: the production environment has no
+    # deployment-branch policy, so a direct push to main would otherwise deploy over
+    # a failed lint or an over-budget bundle.
+    needs: [corpus, lint, size, audit, changes]
     # Deploy only a push to main that changed shipped code. The shippable check is
-    # what makes a CI/test/docs-only merge skip the deploy; the other two guards
-    # are unchanged.
+    # what makes a CI/test/docs-only merge skip the deploy; the branch/event guards
+    # below are unchanged.
     if: >-
       github.ref == 'refs/heads/main'
       && github.event_name == 'push'
