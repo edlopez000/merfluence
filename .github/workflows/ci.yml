@@ -1,4 +1,4 @@
-name: Mermaid update
+name: CI
 
 # CI gate + version currency. Every PR runs the corpus and audit, so nothing
 # merges to main untested — including the Renovate bump PRs configured in

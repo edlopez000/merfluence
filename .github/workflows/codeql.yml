@@ -13,14 +13,14 @@ name: CodeQL
 # dependency, so it costs no scope and cannot change the shipped bundle.
 
 on:
-  # No paths filter, on purpose — same reasoning as mermaid-update.yml's required
+  # No paths filter, on purpose — same reasoning as ci.yml's required
   # checks: CodeQL should read every PR, and if it is ever made a required check,
   # a paths-filtered run that skips would block the PR forever.
   pull_request:
   push:
     branches: [main]
   schedule:
-    # Weekly, Monday 06:30 — offset from mermaid-update.yml's 06:00 so the two
+    # Weekly, Monday 06:30 — offset from ci.yml's 06:00 so the two
     # scheduled runs don't start in the same minute. Catches a new CodeQL query
     # (the query pack updates independently of our code) flagging code that was
     # already on main.
@@ -51,7 +51,7 @@ jobs:
       matrix:
         language: [javascript-typescript]
     steps:
-      # SHA-pinned like every action in this repo (see mermaid-update.yml): a tag
+      # SHA-pinned like every action in this repo (see ci.yml): a tag
       # is mutable, and these run in a repo that also holds deploy credentials.
       # Renovate bumps the pins using the trailing version comment.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
