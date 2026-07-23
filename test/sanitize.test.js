@@ -90,6 +90,101 @@ describe('sanitizeSvg strips active content', () => {
   });
 });
 
+describe('sanitizeSvg strips external resource references', () => {
+  // Script execution is closed by the layers above; this block guards the
+  // *egress* vector. An external <image href> or a style url(http…) fires an
+  // outbound request when the browser paints it — a tracking pixel leaking the
+  // reader's IP/UA/page-view. These must not survive sanitization. See the
+  // uponSanitizeAttribute hook in render.js.
+  it('drops an external <image href>', () => {
+    const { out, doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<image href="https://evil.example/pixel.png" width="1" height="1" /></svg>',
+    );
+    const image = doc.querySelector('image');
+    // The element may survive, but with no source it can't egress.
+    expect(image?.getAttribute('href') ?? null).toBeNull();
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('drops an external <image xlink:href>', () => {
+    const { out, doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+        '<image xlink:href="https://evil.example/pixel.png" /></svg>',
+    );
+    const image = doc.querySelector('image');
+    expect(image?.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ?? null).toBeNull();
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('treats a protocol-relative //host href as external', () => {
+    const { out } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg"><image href="//evil.example/p.png" /></svg>',
+    );
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('scrubs an external url() from the style attribute', () => {
+    const { out, doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<rect style="fill:url(https://evil.example/f.svg#p)" width="10" height="10" /></svg>',
+    );
+    const rect = doc.querySelector('rect');
+    expect(rect).not.toBeNull();
+    expect(rect.getAttribute('style') ?? '').not.toContain('evil.example');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('scrubs an external url() from a presentation attribute (fill)', () => {
+    const { out, doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<rect fill="url(https://evil.example/f.svg#p)" width="10" height="10" /></svg>',
+    );
+    const rect = doc.querySelector('rect');
+    expect(rect.getAttribute('fill') ?? '').not.toContain('evil.example');
+    expect(out).not.toContain('evil.example');
+  });
+});
+
+describe('sanitizeSvg keeps internal references the fix must not break', () => {
+  // Positive controls for the egress guard. Mermaid draws arrowheads, gradients
+  // and clip-paths as internal url(#id) refs; a blanket url() strip would erase
+  // every diagram's arrowheads. These prove the strip is surgical.
+  it('keeps an internal url(#id) marker-end (arrowheads)', () => {
+    const { doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M0 0 L10 0" marker-end="url(#arrow)" /></svg>',
+    );
+    expect(doc.querySelector('path').getAttribute('marker-end')).toBe('url(#arrow)');
+  });
+
+  it('keeps an internal url(#id) fill (gradients) in style and attribute form', () => {
+    const { doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<rect fill="url(#grad)" width="10" height="10" />' +
+        '<circle style="fill:url(#grad)" r="5" /></svg>',
+    );
+    expect(doc.querySelector('rect').getAttribute('fill')).toBe('url(#grad)');
+    expect(doc.querySelector('circle').getAttribute('style')).toContain('url(#grad)');
+  });
+
+  it('keeps an internal url(#id) clip-path', () => {
+    const { doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<g clip-path="url(#c)"><rect width="10" height="10" /></g></svg>',
+    );
+    expect(doc.querySelector('g').getAttribute('clip-path')).toBe('url(#c)');
+  });
+
+  it('keeps a data: image href (inline, no egress — per policy)', () => {
+    const dataUri = 'data:image/png;base64,iVBORw0KGgo=';
+    const { doc } = sanitizedDoc(
+      `<svg xmlns="http://www.w3.org/2000/svg"><image href="${dataUri}" /></svg>`,
+    );
+    expect(doc.querySelector('image')?.getAttribute('href')).toBe(dataUri);
+  });
+});
+
 describe('sanitizeSvg preserves what Mermaid legitimately emits', () => {
   // Positive controls. Without these the suite would pass just as well against
   // a sanitizer that returned '' for everything.

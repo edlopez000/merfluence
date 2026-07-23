@@ -53,11 +53,83 @@ const SANITIZE = {
 };
 
 /**
+ * True if a reference points at an external *network* host — an http(s) URL or
+ * a protocol-relative `//host/…`. These are the only refs that egress when the
+ * browser paints the SVG.
+ *
+ * What this deliberately does NOT match, and must never strip:
+ *   - `url(#arrowhead)` / `href="#id"` — internal fragment refs. Mermaid draws
+ *     every arrowhead as `marker-end="url(#id)"` and its gradients/clip-paths
+ *     as `fill="url(#id)"`; killing these would break real diagrams.
+ *   - `data:` URIs — inline, so no egress. Nothing in our Mermaid config emits
+ *     them today; we leave them to the SVG profile's own data-URI handling.
+ */
+function isExternalRef(value) {
+  return /^\s*(?:https?:)?\/\//i.test(value) || /^\s*https?:/i.test(value);
+}
+
+/** Strip `url(http…)` / `url(//host…)` occurrences, leaving `url(#id)` intact. */
+function stripExternalUrlRefs(value) {
+  // Match a CSS url() whose target is an external network ref; drop the whole
+  // token. Internal `url(#…)` and `data:` targets don't match and survive.
+  return value.replace(/url\(\s*['"]?\s*(?:https?:)?\/\/[^)]*\)/gi, '');
+}
+
+// Presentation attributes that can carry a `url(...)` paint/reference. `style`
+// is handled separately (it holds arbitrary CSS, not a single url()).
+const URL_BEARING_ATTRS = new Set([
+  'fill',
+  'stroke',
+  'clip-path',
+  'mask',
+  'filter',
+  'marker-start',
+  'marker-mid',
+  'marker-end',
+]);
+
+/**
+ * Egress guard: strip references to external network hosts from the SVG before
+ * it reaches a reader's DOM. Script execution is closed by three other layers
+ * (securityLevel:'strict', htmlLabels:false, the SVG profile); this closes the
+ * remaining hole — `<image href="https://…">` and `style="fill:url(https://…)"`
+ * would otherwise fire an outbound request (a tracking pixel) when painted,
+ * contradicting the app's zero-egress claim. Registered once, at module load,
+ * against the single imported DOMPurify instance.
+ */
+DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
+  const name = data.attrName;
+  const value = data.attrValue ?? '';
+
+  // URI attributes: an external href/xlink:href on <image>/<use>/etc. Dropping
+  // the attribute leaves the element inert (no source to fetch).
+  if ((name === 'href' || name === 'xlink:href') && isExternalRef(value)) {
+    data.keepAttr = false;
+    return;
+  }
+
+  // The style attribute holds arbitrary CSS; scrub only external url() refs.
+  if (name === 'style') {
+    data.attrValue = stripExternalUrlRefs(value);
+    return;
+  }
+
+  // Presentation attrs whose whole value may be an external url(...) paint.
+  if (URL_BEARING_ATTRS.has(name) && /url\(/i.test(value)) {
+    data.attrValue = stripExternalUrlRefs(value);
+  }
+});
+
+/**
  * The single sanitize policy, exported so every path that injects SVG into a
  * reader's DOM runs the same one. Fresh renders sanitize here; the view also
  * runs cached SVG through this before injecting it, because that cache lives in
  * macro config — an untrusted-input boundary — and may have been hand-edited to
  * bypass the sanitize that ran at save time.
+ *
+ * Beyond neutralizing active content, this also strips external resource
+ * references (see the uponSanitizeAttribute hook above) so no rendered diagram
+ * can leak a reader's IP/UA/page-view to an arbitrary host.
  */
 export function sanitizeSvg(svg) {
   return DOMPurify.sanitize(svg ?? '', SANITIZE);
