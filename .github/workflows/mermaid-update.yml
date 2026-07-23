@@ -23,6 +23,14 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch:
 
+# Least-privilege default for every job's GITHUB_TOKEN: only actions/checkout
+# needs it, and only to read. The deploy jobs authenticate to Forge with FORGE_*
+# secrets, not this token, and no job writes via GITHUB_TOKEN, so no job overrides
+# this. Without it, jobs holding FORGE_* secrets would inherit the repository
+# default, which can be write-all.
+permissions:
+  contents: read
+
 jobs:
   corpus:
     name: Diagram corpus
@@ -160,8 +168,6 @@ jobs:
   changes:
     name: Detect shippable changes
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     outputs:
       shippable: ${{ steps.decide.outputs.shippable }}
     steps:
