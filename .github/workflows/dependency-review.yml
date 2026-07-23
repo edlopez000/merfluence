@@ -1,0 +1,78 @@
+name: Dependency Review
+
+# Diff-scoped dependency gate on pull requests. The `audit` job in ci.yml runs
+# `npm audit --omit=dev --audit-level=high`, which reasons about the resolved
+# tree as a whole and says nothing about licenses. This complements it on two
+# axes the audit can't see:
+#
+#   1. What a SPECIFIC PR introduces. Dependency Review compares the PR's base
+#      and head dependency graphs and flags only the newly added/changed
+#      packages — so a review comment points at exactly the dependency a change
+#      pulled in, at the same high+ severity floor the audit uses.
+#   2. Licenses. This app bundles every runtime dependency into the shipped JS
+#      (there is no server), so a copyleft dependency is a distribution problem
+#      for an Apache-2.0 project. The audit is blind to that; the license gate
+#      below fails the PR on it.
+#
+# It is also the cheap first half of publishing a CycloneDX SBOM with a license
+# report (#54): the license inventory this reads is the same one that feeds it.
+#
+# CI-only workflow: it touches no src/, no manifest.yml, and no dependency, so
+# it costs no scope and cannot change the shipped bundle.
+
+on:
+  # pull_request ONLY, unlike ci.yml/codeql.yml which also run on push+schedule.
+  # This action diffs the base ref against the head ref, which only exists in a
+  # pull_request context — there is no "before/after dependency graph" to compare
+  # on a push to main or a scheduled run, so those events would be no-ops.
+  pull_request:
+
+# Least-privilege default: read-only for every job's GITHUB_TOKEN. The review
+# job below elevates to exactly what it needs and nothing wider.
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    # contents:read lets the action read this repo's dependency graph;
+    # pull-requests:write lets it post the summary comment (comment-summary-in-pr
+    # below). On a PR from a fork the token is read-only regardless and the action
+    # degrades to the job summary instead of failing — the pass/fail gate still
+    # works, only the convenience comment is skipped.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # SHA-pinned like every action in this repo (see ci.yml): a tag is mutable,
+      # and these run in a repo that also holds deploy credentials. Renovate bumps
+      # the pin using the trailing version comment.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Dependency Review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Match the npm audit floor in ci.yml: block on a newly introduced
+          # high/critical-severity dependency, ignore low/moderate here (the
+          # whole-tree audit still reports those).
+          fail-on-severity: high
+          # Deny the strong-copyleft families that are incompatible with
+          # redistributing this Apache-2.0 app's bundled dependencies. deny-licenses
+          # (not allow-licenses) on purpose: an allow-list would fail a PR the
+          # moment it adds a legitimately-licensed package with an SPDX id we forgot
+          # to enumerate (0BSD, BlueOak, Python-2.0, ...), which trains reviewers to
+          # bypass the gate. A deny-list fires only on the licenses that actually
+          # threaten the invariant. Both the current SPDX ids (-only/-or-later) and
+          # the deprecated bare forms are listed because npm's dependency graph still
+          # reports many packages under the old identifiers (e.g. "GPL-3.0").
+          deny-licenses: >-
+            GPL-2.0, GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0, GPL-3.0-only, GPL-3.0-or-later,
+            LGPL-2.0, LGPL-2.0-only, LGPL-2.0-or-later,
+            LGPL-2.1, LGPL-2.1-only, LGPL-2.1-or-later,
+            LGPL-3.0, LGPL-3.0-only, LGPL-3.0-or-later,
+            AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later,
+            SSPL-1.0, BUSL-1.1
+          # Post the dependency diff as a PR comment only when the gate fails, so a
+          # clean PR stays quiet; the full diff always lands in the job summary.
+          comment-summary-in-pr: on-failure
