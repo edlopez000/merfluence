@@ -9,6 +9,13 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.0.1](https://github.com/edlopez000/merfluence/compare/v1.0.0...v1.0.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* strip external resource references in sanitizeSvg ([#72](https://github.com/edlopez000/merfluence/issues/72)) ([5a16cd7](https://github.com/edlopez000/merfluence/commit/5a16cd7f1795bb4bb1a9c685fd487047d03ea6cf)), closes [#64](https://github.com/edlopez000/merfluence/issues/64)
+
 ## [1.0.0] - 2026-07-19
 
 Initial release. Baseline hand-written from the pre-versioning history; the tag
