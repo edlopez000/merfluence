@@ -2,6 +2,19 @@ import DOMPurify from 'dompurify';
 import { loadMermaid, resolveMajor } from './mermaid-registry.js';
 
 /**
+ * Hard cap on diagram source length, matching Mermaid's historical default
+ * `maxTextSize` (~50K chars) so behavior is unchanged — just made explicit.
+ *
+ * We enforce it ourselves *before* handing source to Mermaid (see
+ * enforceSourceLimit) for two reasons: a pathological megabyte of text never
+ * loads or parses through Mermaid (no hang), and the user sees a clear message
+ * instead of Mermaid's generic "Maximum text size in diagram exceeded". The
+ * same number is also set as `maxTextSize` in baseConfig, so if the pre-parse
+ * cap were ever bypassed the library guard still backs it.
+ */
+export const MAX_SOURCE_CHARS = 50000;
+
+/**
  * Two hardening layers, both load-bearing.
  *
  * Macro config is authored by anyone who can edit the page and rendered for
@@ -21,6 +34,10 @@ function baseConfig({ theme, useMaxWidth }) {
     startOnLoad: false,
     securityLevel: 'strict',
     htmlLabels: false,
+    // Explicit rather than relying on Mermaid's default. Pairs with the
+    // pre-parse enforceSourceLimit() guard, which fires first with a friendlier
+    // message; this is the library-level backstop at the same number.
+    maxTextSize: MAX_SOURCE_CHARS,
     theme: theme === 'dark' ? 'dark' : 'default',
     fontFamily: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     flowchart: { htmlLabels: false, useMaxWidth },
@@ -160,8 +177,24 @@ export function describeError(err) {
   return { line: null, message };
 }
 
+/**
+ * Reject oversized source before it reaches Mermaid. Throwing here (rather than
+ * letting mermaid.parse hit its own maxTextSize guard) keeps a pathological
+ * input from ever loading/parsing Mermaid, and gives the user a clear message
+ * that surfaces through describeError into the preview/reader error panels.
+ */
+function enforceSourceLimit(source) {
+  const length = (source ?? '').length;
+  if (length > MAX_SOURCE_CHARS) {
+    throw new Error(
+      `Diagram source is too large (${length} characters; limit is ${MAX_SOURCE_CHARS}).`,
+    );
+  }
+}
+
 /** Throws on invalid syntax. Cheap enough to run on every keystroke. */
 export async function validate(source, versionPref = 'auto') {
+  enforceSourceLimit(source);
   const mermaid = await loadMermaid(versionPref);
   mermaid.initialize(baseConfig({ theme: 'default', useMaxWidth: true }));
   await mermaid.parse(source);
@@ -178,6 +211,7 @@ export async function renderDiagram({
 }) {
   const trimmed = (source ?? '').trim();
   if (!trimmed) throw new Error('Diagram is empty');
+  enforceSourceLimit(trimmed);
 
   const mermaid = await loadMermaid(versionPref);
   mermaid.initialize(baseConfig({ theme, useMaxWidth }));
