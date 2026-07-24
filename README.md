@@ -3,6 +3,7 @@
 > Diagrams as code for Confluence Cloud. Write [Mermaid](https://mermaid.js.org/), get a rendered diagram — entirely in your browser, with nothing sent anywhere.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/edlopez000/merfluence/badge)](https://scorecard.dev/viewer/?uri=github.com/edlopez000/merfluence)
 ![Built on Atlassian Forge](https://img.shields.io/badge/Built%20on-Atlassian%20Forge-0052CC)
 ![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D)
 
