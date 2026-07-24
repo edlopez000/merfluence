@@ -32,16 +32,19 @@ export default defineConfig({
       // index.html shells carry no branch logic worth gating on; they would
       // only depress the ratio with noise.
       exclude: ['src/**/*.html'],
-      // The floor measured after the runtime tests landed, with a couple of
-      // points of slack so the real render's run-to-run path variation can't
-      // red the build. The pure lib/ modules sit at ~100%; the drag is the view
-      // DOM code (Stage pan/zoom, Toolbar, PNG export) that only a full browser
-      // driver would reach. Ratchet these up as that gets covered — never down.
+      // The floor measured after each coverage-bearing suite lands, with a
+      // couple of points of slack so the real render's run-to-run path variation
+      // can't red the build. The pure lib/ modules sit at ~97%; the remaining
+      // drag is the view DOM code (Stage pan/zoom, Toolbar interactions) that
+      // only a mounted-component driver would reach. Last ratcheted when the
+      // config-save + PNG-export browser tests landed (PNG export extracted to
+      // lib/png-export.ts and covered directly). Ratchet up as more gets
+      // covered — never down.
       thresholds: {
-        lines: 63,
-        statements: 60,
-        functions: 58,
-        branches: 55,
+        lines: 70,
+        statements: 65,
+        functions: 63,
+        branches: 58,
       },
     },
     projects: [
