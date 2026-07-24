@@ -1,0 +1,77 @@
+name: Scorecard
+
+# OpenSSF Scorecard: an automated, objective score of this repo's security
+# practices — SHA-pinned actions, branch protection, a dependency cooldown, a
+# gated deploy, SAST, a security policy — the posture this project already keeps
+# but never measured or advertised. Scorecard reads that posture on a schedule,
+# publishes the findings to Security -> Code scanning as SARIF, and (on this
+# public repo) feeds the api.securityscorecards.dev badge in the README so the
+# score is a visible, tracked signal rather than an unstated claim.
+#
+# This is a CI-only workflow: it touches no src/, no manifest.yml, and no
+# dependency, so it costs no scope and cannot change the shipped bundle.
+
+on:
+  # Weekly, Monday 07:00 — offset from ci.yml (06:00) and codeql.yml (06:30) so
+  # the three scheduled runs don't start in the same minute. The weekly cadence
+  # catches drift (a pin gone stale, a protection relaxed) and re-publishes the
+  # badge even when nothing lands on main.
+  schedule:
+    - cron: '0 7 * * 1'
+  # Re-score on every push to main so a merged change to the posture (a new
+  # workflow, a permissions tweak) updates the badge without waiting a week.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least-privilege default: read-only for every job's GITHUB_TOKEN. The analysis
+# job below elevates to exactly what Scorecard needs; nothing else here writes.
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    # Scoped elevation: security-events:write uploads the SARIF results,
+    # id-token:write lets Scorecard publish to the OpenSSF results API that backs
+    # the public badge. contents:read is the checkout. No packages / no wider
+    # scope.
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+    steps:
+      # SHA-pinned like every action in this repo (see ci.yml / codeql.yml): a
+      # tag is mutable, and these run in a repo that also holds deploy
+      # credentials. Renovate bumps the pins using the trailing version comment.
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # publish_results:true sends the score to the OpenSSF results API,
+          # which is what makes the api.securityscorecards.dev badge render for
+          # this public repo. It publishes only the aggregate result, not source.
+          publish_results: true
+
+      # Retain the raw SARIF as a run artifact (14 days) for local inspection —
+      # handy when triaging a finding before it shows up in code scanning.
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 14
+
+      # Publish to Security -> Code scanning, same destination as codeql.yml, so
+      # Scorecard findings sit alongside the SAST results.
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: results.sarif
