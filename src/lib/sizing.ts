@@ -14,7 +14,7 @@ export const MIN_HEIGHT = 120;
 export const MAX_HEIGHT = 2000;
 
 /** Clamp a raw pixel height into the allowed range and round to a whole pixel. */
-export function clampHeight(px) {
+export function clampHeight(px: number) {
   return Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round(px)));
 }
 
@@ -23,7 +23,7 @@ export function clampHeight(px) {
  * Macro config can be authored by anyone who can edit the page, so a garbage or
  * hostile `height` must degrade to natural sizing rather than break layout.
  */
-export function normalizeHeight(value) {
+export function normalizeHeight(value: unknown) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
   return clampHeight(n);
@@ -43,7 +43,7 @@ export const SIZE_PRESETS = [
 ];
 
 /** The height (px, or null) for a preset id; null for an unknown id. */
-export function heightForPreset(id) {
+export function heightForPreset(id: string) {
   const preset = SIZE_PRESETS.find((p) => p.id === id);
   return preset ? preset.height : null;
 }
@@ -54,7 +54,7 @@ export function heightForPreset(id) {
  * nearest preset, so a height saved by an earlier build (or hand-edited config)
  * still selects a sensible option instead of showing nothing.
  */
-export function presetForHeight(value) {
+export function presetForHeight(value: unknown) {
   const h = normalizeHeight(value);
   if (h === null) return 'natural';
   let best = null;
@@ -64,5 +64,7 @@ export function presetForHeight(value) {
       best = preset;
     }
   }
-  return best.id;
+  // best is always set (SIZE_PRESETS always has non-natural entries), but the
+  // loop can't prove that to the type-checker; fall back to natural defensively.
+  return best ? best.id : 'natural';
 }

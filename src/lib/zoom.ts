@@ -13,7 +13,10 @@
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 4;
 
-export function clampZoom(z) {
+type Point = { x: number; y: number };
+type Rect = { left: number; top: number; width: number; height: number };
+
+export function clampZoom(z: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 }
 
@@ -27,7 +30,23 @@ export function clampZoom(z) {
  * To keep it under the anchor after zooming, the translation must move by
  * (anchor - panLeft) * (1 - new/old).
  */
-export function anchoredZoom({ oldZoom, nextZoom, pan, anchorX, anchorY, panLeft, panTop }) {
+export function anchoredZoom({
+  oldZoom,
+  nextZoom,
+  pan,
+  anchorX,
+  anchorY,
+  panLeft,
+  panTop,
+}: {
+  oldZoom: number;
+  nextZoom: number;
+  pan: Point;
+  anchorX: number;
+  anchorY: number;
+  panLeft: number;
+  panTop: number;
+}) {
   const zoom = clampZoom(nextZoom);
   if (zoom === oldZoom) return null;
   const shift = 1 - zoom / oldZoom;
@@ -50,7 +69,7 @@ export function anchoredZoom({ oldZoom, nextZoom, pan, anchorX, anchorY, panLeft
  * point p to layout + pan + z*p. At p = 0 that gives the reported left/top, so
  * layout = reported - pan; the size is simply scaled, so it divides out.
  */
-export function untransformedRect({ rect, zoom, pan }) {
+export function untransformedRect({ rect, zoom, pan }: { rect: Rect; zoom: number; pan: Point }) {
   return {
     left: rect.left - pan.x,
     top: rect.top - pan.y,
@@ -72,7 +91,7 @@ export function untransformedRect({ rect, zoom, pan }) {
  * absorbs wherever the pan layer's own margin already placed it, so the caller
  * never has to know about the CSS centring.
  */
-export function fitView({ content, view }) {
+export function fitView({ content, view }: { content: Rect; view: Rect }) {
   const dims = [content.width, content.height, view.width, view.height];
   if (!dims.every((n) => Number.isFinite(n) && n > 0)) return null;
   // min so the binding axis fits; clamp so a tiny diagram stops at MAX_ZOOM

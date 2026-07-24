@@ -29,7 +29,7 @@ export const MAX_SOURCE_CHARS = 50000;
  * With htmlLabels off there is no legitimate <foreignObject>, so the profile
  * stripping it costs us nothing.
  */
-function baseConfig({ theme, useMaxWidth }) {
+function baseConfig({ theme, useMaxWidth }: { theme: string; useMaxWidth: boolean }) {
   return {
     startOnLoad: false,
     securityLevel: 'strict',
@@ -81,12 +81,12 @@ const SANITIZE = {
  *   - `data:` URIs — inline, so no egress. Nothing in our Mermaid config emits
  *     them today; we leave them to the SVG profile's own data-URI handling.
  */
-function isExternalRef(value) {
+function isExternalRef(value: string) {
   return /^\s*(?:https?:)?\/\//i.test(value) || /^\s*https?:/i.test(value);
 }
 
 /** Strip `url(http…)` / `url(//host…)` occurrences, leaving `url(#id)` intact. */
-function stripExternalUrlRefs(value) {
+function stripExternalUrlRefs(value: string) {
   // Match a CSS url() whose target is an external network ref; drop the whole
   // token. Internal `url(#…)` and `data:` targets don't match and survive.
   return value.replace(/url\(\s*['"]?\s*(?:https?:)?\/\/[^)]*\)/gi, '');
@@ -148,7 +148,7 @@ DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
  * references (see the uponSanitizeAttribute hook above) so no rendered diagram
  * can leak a reader's IP/UA/page-view to an arbitrary host.
  */
-export function sanitizeSvg(svg) {
+export function sanitizeSvg(svg: string | null | undefined) {
   return DOMPurify.sanitize(svg ?? '', SANITIZE);
 }
 
@@ -160,8 +160,13 @@ const nextId = () => `mmd-${Date.now().toString(36)}-${seq++}`;
  * whether the grammar is jison-based (`hash.loc.first_line`) or one of the
  * newer langium parsers (line embedded in the message). Dig out whatever we
  * can and fall back to the raw message.
+ *
+ * `err` is `any`, not `unknown`: it is an arbitrarily-shaped thrown value and the
+ * body walks optional-chained paths (`err?.hash?.loc?.first_line`) that `unknown`
+ * would reject before the runtime guards can run.
  */
-export function describeError(err) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function describeError(err: any) {
   const message = String(err?.message ?? err ?? 'Unknown error').trim();
 
   const jisonLine = err?.hash?.loc?.first_line;
@@ -183,7 +188,7 @@ export function describeError(err) {
  * input from ever loading/parsing Mermaid, and gives the user a clear message
  * that surfaces through describeError into the preview/reader error panels.
  */
-function enforceSourceLimit(source) {
+function enforceSourceLimit(source: string) {
   const length = (source ?? '').length;
   if (length > MAX_SOURCE_CHARS) {
     throw new Error(
@@ -193,22 +198,25 @@ function enforceSourceLimit(source) {
 }
 
 /** Throws on invalid syntax. Cheap enough to run on every keystroke. */
-export async function validate(source, versionPref = 'auto') {
+export async function validate(source: string, versionPref = 'auto') {
   enforceSourceLimit(source);
   const mermaid = await loadMermaid(versionPref);
   mermaid.initialize(baseConfig({ theme: 'default', useMaxWidth: true }));
   await mermaid.parse(source);
 }
 
-/**
- * @returns {Promise<{ svg: string, major: string }>} sanitized SVG markup
- */
+/** @returns sanitized SVG markup */
 export async function renderDiagram({
   source,
   versionPref = 'auto',
   theme = 'light',
   useMaxWidth = true,
-}) {
+}: {
+  source: string;
+  versionPref?: string;
+  theme?: string;
+  useMaxWidth?: boolean;
+}): Promise<{ svg: string; major: string }> {
   const trimmed = (source ?? '').trim();
   if (!trimmed) throw new Error('Diagram is empty');
   enforceSourceLimit(trimmed);
@@ -225,7 +233,7 @@ export async function renderDiagram({
 }
 
 /** Intrinsic pixel size of a rendered SVG, for sizing the iframe. */
-export function measureSvg(container) {
+export function measureSvg(container: Element | null | undefined) {
   const svg = container?.querySelector('svg');
   if (!svg) return null;
   const box = svg.getBoundingClientRect();

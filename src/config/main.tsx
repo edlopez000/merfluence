@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
@@ -23,7 +24,10 @@ const DEBOUNCE_MS = 300;
 /* Error line highlighting                                             */
 /* ------------------------------------------------------------------ */
 
-const setErrorLine = StateEffect.define();
+// Carries the 1-based error line to highlight, or null to clear. Typed
+// explicitly: StateEffect.define() with no type argument defaults its value to
+// `null`, which would reject the line number this effect exists to carry.
+const setErrorLine = StateEffect.define<number | null>();
 const errorLineMark = Decoration.line({ class: 'cm-errorLine' });
 
 const errorLineField = StateField.define({
@@ -49,9 +53,19 @@ const errorLineField = StateField.define({
 /* Editor                                                              */
 /* ------------------------------------------------------------------ */
 
-function Editor({ value, dark, onChange, errorLine }) {
-  const host = useRef(null);
-  const viewRef = useRef(null);
+function Editor({
+  value,
+  dark,
+  onChange,
+  errorLine,
+}: {
+  value: string;
+  dark: boolean;
+  onChange: (value: string) => void;
+  errorLine: number | null;
+}) {
+  const host = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
 
   useEffect(() => {
     const extensions = [
@@ -72,7 +86,7 @@ function Editor({ value, dark, onChange, errorLine }) {
 
     const view = new EditorView({
       state: EditorState.create({ doc: value, extensions }),
-      parent: host.current,
+      parent: host.current ?? undefined,
     });
     viewRef.current = view;
     view.focus();
@@ -105,7 +119,17 @@ function Editor({ value, dark, onChange, errorLine }) {
 /* Panel                                                               */
 /* ------------------------------------------------------------------ */
 
-function Panel({ initial }) {
+/**
+ * The live-preview state machine, a discriminated union on `status` so the ready
+ * SVG and the error line/message live only on the states that carry them.
+ */
+type PreviewState =
+  | { status: 'idle' }
+  | { status: 'empty' }
+  | { status: 'ready'; svg: string }
+  | { status: 'error'; line: number | null; message: string };
+
+function Panel({ initial }: { initial: InitialConfig }) {
   const [source, setSource] = useState(initial.source || DEFAULT_SOURCE);
   const [mermaidVersion, setMermaidVersion] = useState(initial.mermaidVersion || 'auto');
   const [theme, setTheme] = useState(initial.theme || 'auto');
@@ -114,8 +138,8 @@ function Panel({ initial }) {
   // presets; persisted to config so every reader matches.
   const [height, setHeight] = useState(normalizeHeight(initial.height));
 
-  const [preview, setPreview] = useState({ status: 'idle' });
-  const [dropError, setDropError] = useState(null);
+  const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
+  const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const dark = useMemo(() => resolveTheme(theme) === 'dark', [theme]);
 
@@ -127,12 +151,12 @@ function Panel({ initial }) {
 
   // Load a .mmd or .md file dropped onto the editor. Reading and parsing happen
   // in the browser; nothing is uploaded.
-  const onDropFile = useCallback(async (file) => {
+  const onDropFile = useCallback(async (file: File) => {
     setDropError(null);
     try {
       const text = await file.text();
       const result = extractMermaidSource(text, file.name);
-      if (result.error) {
+      if ('error' in result) {
         setDropError(result.error);
       } else if (result.source.trim()) {
         setSource(result.source);
@@ -153,25 +177,25 @@ function Panel({ initial }) {
   // works. Everything is read in-browser — nothing is uploaded.
   useEffect(() => {
     let depth = 0;
-    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
 
-    const onEnter = (e) => {
+    const onEnter = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
       depth += 1;
       setDragging(true);
     };
-    const onOver = (e) => {
+    const onOver = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
     };
-    const onLeave = (e) => {
+    const onLeave = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       depth = Math.max(0, depth - 1);
       if (depth === 0) setDragging(false);
     };
-    const onDropEvt = (e) => {
+    const onDropEvt = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
       e.stopPropagation();
@@ -222,7 +246,7 @@ function Panel({ initial }) {
     };
   }, [source, mermaidVersion, theme, useMaxWidth]);
 
-  const insertTemplate = (id) => {
+  const insertTemplate = (id: string) => {
     const template = TEMPLATES.find((t) => t.id === id);
     if (template) setSource(template.source);
   };
@@ -359,7 +383,9 @@ function Panel({ initial }) {
             {preview.status === 'ready' && (
               <div
                 className={`preview-diagram${height ? ' sized' : ''}`}
-                style={height ? { '--diagram-height': `${height}px` } : undefined}
+                style={
+                  height ? ({ '--diagram-height': `${height}px` } as CSSProperties) : undefined
+                }
               >
                 <div className="preview-svg" dangerouslySetInnerHTML={{ __html: preview.svg }} />
               </div>
@@ -398,8 +424,20 @@ function Panel({ initial }) {
   );
 }
 
+/**
+ * Saved diagram config the editor seeds its fields from. Every field is
+ * optional — a never-saved macro opens with an empty object.
+ */
+type InitialConfig = {
+  source?: string;
+  mermaidVersion?: string;
+  theme?: string;
+  useMaxWidth?: boolean;
+  height?: number | string;
+};
+
 function App() {
-  const [initial, setInitial] = useState(null);
+  const [initial, setInitial] = useState<InitialConfig | null>(null);
 
   useEffect(() => {
     enableTheme();
@@ -412,4 +450,4 @@ function App() {
   return <Panel initial={initial} />;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root') as HTMLElement).render(<App />);

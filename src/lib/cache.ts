@@ -29,12 +29,18 @@ export const CACHE_VERSION = 2;
 // caching existed.
 const MAX_SVG_BYTES = 45 * 1024;
 
+/**
+ * Cache fields merged into a save. Either SVG variant is omitted when it doesn't
+ * fit the byte budget; cacheV is always present.
+ */
+type CacheFields = { cacheV: number; svgLight?: string; svgDark?: string };
+
 // SVG can contain multi-byte characters (labels, arrows), so measure encoded
 // bytes rather than string length.
-const byteLength = (str) => new TextEncoder().encode(str).length;
+const byteLength = (str: string) => new TextEncoder().encode(str).length;
 
 /** True if this SVG is a non-empty string within the per-string byte budget. */
-export function fitsCache(svg) {
+export function fitsCache(svg: unknown) {
   return typeof svg === 'string' && svg.length > 0 && byteLength(svg) <= MAX_SVG_BYTES;
 }
 
@@ -43,8 +49,8 @@ export function fitsCache(svg) {
  * is simply omitted, so a hit is all-or-nothing per theme. cacheV is always
  * written so a save from a newer app version stamps its version onto the config.
  */
-export function buildCacheFields(svgLight, svgDark) {
-  const fields = { cacheV: CACHE_VERSION };
+export function buildCacheFields(svgLight: string, svgDark: string): CacheFields {
+  const fields: CacheFields = { cacheV: CACHE_VERSION };
   if (fitsCache(svgLight)) fields.svgLight = svgLight;
   if (fitsCache(svgDark)) fields.svgDark = svgDark;
   return fields;
@@ -54,7 +60,10 @@ export function buildCacheFields(svgLight, svgDark) {
  * Return the cached SVG for the resolved theme, or null on a miss. A cache
  * written by a different CACHE_VERSION is treated as absent.
  */
-export function pickCachedSvg(config, theme) {
+export function pickCachedSvg(
+  config: { cacheV?: number; svgLight?: unknown; svgDark?: unknown } | null | undefined,
+  theme: string,
+) {
   if (!config || config.cacheV !== CACHE_VERSION) return null;
   const svg = theme === 'dark' ? config.svgDark : config.svgLight;
   return typeof svg === 'string' && svg.length > 0 ? svg : null;

@@ -7,9 +7,9 @@ import { view } from '@forge/bridge';
  * cache is filled by getConfig() at startup and refreshed by onThemeChange().
  * `null` means "unknown / auto", which defers to the OS preference.
  */
-let hostColorMode = null;
+let hostColorMode: 'light' | 'dark' | null = null;
 
-function normalizeMode(mode) {
+function normalizeMode(mode: unknown) {
   return mode === 'light' || mode === 'dark' ? mode : null;
 }
 
@@ -28,7 +28,7 @@ async function refreshHostTheme() {
  * is `auto` we use the host colour mode from getContext().theme, then fall back
  * to the OS preference, then to light.
  */
-export function resolveTheme(pref) {
+export function resolveTheme(pref: string | null | undefined) {
   if (pref === 'light' || pref === 'dark') return pref;
   if (hostColorMode) return hostColorMode;
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -39,7 +39,7 @@ export function resolveTheme(pref) {
  * attribute and the OS media query are only used as *triggers* here; the actual
  * value is re-read from getContext().theme, the typed signal, before we notify.
  */
-export function onThemeChange(handler) {
+export function onThemeChange(handler: () => void) {
   const onTrigger = async () => {
     await refreshHostTheme();
     handler();
@@ -90,6 +90,9 @@ export function enableTheme() {
  */
 export function resize() {
   try {
+    // @ts-expect-error `resize` is not in the shipped @forge/bridge types — it's
+    // a surface that has moved between Forge versions, so we probe for it
+    // defensively (optional call) rather than depend on it.
     const result = view.resize?.();
     if (result?.catch) result.catch(() => {});
   } catch {
@@ -97,7 +100,7 @@ export function resize() {
   }
 }
 
-export async function submitConfig(values) {
+export async function submitConfig(values: Record<string, unknown>) {
   // A Confluence Custom UI macro config must submit its fields WRAPPED as
   // { config: fields }. Passing the fields object directly makes the host reject
   // the save with `view.submit(): Invalid "config" provided. Expected object`,

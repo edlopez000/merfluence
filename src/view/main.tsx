@@ -8,7 +8,7 @@ import { pickCachedSvg } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
 import { anchoredZoom, fitView, untransformedRect } from '../lib/zoom.js';
 
-function download(blob, filename) {
+function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -22,8 +22,8 @@ function download(blob, filename) {
  * URL, paint to a canvas. No upload, no server, no attachment. Rendered at 2x
  * because a 1x flowchart pasted into a deck looks like a fax.
  */
-async function exportPng(svgEl, scale = 2) {
-  const clone = svgEl.cloneNode(true);
+async function exportPng(svgEl: SVGElement, scale = 2) {
+  const clone = svgEl.cloneNode(true) as SVGElement;
   const { width, height } = svgEl.getBoundingClientRect();
   clone.setAttribute('width', String(width));
   clone.setAttribute('height', String(height));
@@ -42,28 +42,39 @@ async function exportPng(svgEl, scale = 2) {
   canvas.width = Math.ceil(width * scale);
   canvas.height = Math.ceil(height * scale);
   const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not rasterize the diagram');
   ctx.scale(scale, scale);
   ctx.drawImage(image, 0, 0);
 
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('Could not rasterize the diagram');
   download(blob, 'diagram.png');
 }
 
-function Toolbar({ stageRef, source, onZoom, onReset, zoom }) {
+type StageRef = { current: HTMLDivElement | null };
+
+type ToolbarProps = {
+  stageRef: StageRef;
+  source: string;
+  onZoom: (delta: number) => void;
+  onReset: () => void;
+  zoom: number;
+};
+
+function Toolbar({ stageRef, source, onZoom, onReset, zoom }: ToolbarProps) {
   const [copied, setCopied] = useState(false);
-  const [failure, setFailure] = useState(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const exportRef = useRef(null);
+  const exportRef = useRef<HTMLDivElement | null>(null);
 
   // Close the export menu on an outside click or Escape, the two things a user
   // expects to dismiss a popup.
   useEffect(() => {
     if (!exportOpen) return;
-    const onDown = (e) => {
-      if (!exportRef.current?.contains(e.target)) setExportOpen(false);
+    const onDown = (e: PointerEvent) => {
+      if (!exportRef.current?.contains(e.target as Node | null)) setExportOpen(false);
     };
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setExportOpen(false);
     };
     document.addEventListener('pointerdown', onDown);
@@ -97,7 +108,7 @@ function Toolbar({ stageRef, source, onZoom, onReset, zoom }) {
     try {
       await exportPng(svg);
     } catch (err) {
-      setFailure(err.message);
+      setFailure(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -169,14 +180,22 @@ function Toolbar({ stageRef, source, onZoom, onReset, zoom }) {
   );
 }
 
-function Stage({ svg, useMaxWidth, height }) {
-  const stageRef = useRef(null);
+function Stage({
+  svg,
+  useMaxWidth,
+  height,
+}: {
+  svg: string;
+  useMaxWidth: boolean;
+  height: number | null;
+}) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   // Coords live in a ref (a pointermove shouldn't re-render for them), but the
   // grabbing cursor needs real state: mutating a ref repaints nothing, which is
   // why the cursor used to stay grabbing after a release.
-  const drag = useRef(null);
+  const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
   // The wheel/fullscreen listeners below are bound once, so they'd close over
@@ -191,7 +210,7 @@ function Stage({ svg, useMaxWidth, height }) {
   // and the toolbar +/- buttons (anchor = stage centre). .pan transforms from
   // its top-left, so its live on-screen rect is the reference; that rect already
   // includes the margin-auto centring, so the offset cancels out.
-  const zoomTo = (nextZoom, anchorX, anchorY) => {
+  const zoomTo = (nextZoom: number, anchorX: number, anchorY: number) => {
     const panRect = stageRef.current?.querySelector('.pan')?.getBoundingClientRect();
     if (!panRect) return;
     const next = anchoredZoom({
@@ -212,7 +231,8 @@ function Stage({ svg, useMaxWidth, height }) {
   // live rects, hand the math to the pure helper, apply the result.
   const fitToStage = () => {
     const stage = stageRef.current;
-    const panEl = stage?.querySelector('.pan');
+    if (!stage) return false;
+    const panEl = stage.querySelector('.pan');
     if (!panEl) return false;
 
     // .pan's rect carries whatever transform is applied right now, so invert it to
@@ -229,7 +249,7 @@ function Stage({ svg, useMaxWidth, height }) {
     // :fullscreen rule adds (read, not hardcoded, so the CSS stays the one owner).
     const stageRect = stage.getBoundingClientRect();
     const style = getComputedStyle(stage);
-    const inset = (side) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+    const inset = (side: string) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
     const view = {
       left: stageRect.left + inset('left'),
       top: stageRect.top + inset('top'),
@@ -273,7 +293,7 @@ function Stage({ svg, useMaxWidth, height }) {
   // Confluence page's scroll to the top of our macro (a cross-origin quirk we
   // can't read the scroll position around), and scrollIntoView scrolls the parent
   // frame back to it, which needs no scope.
-  const preFullscreen = useRef(null);
+  const preFullscreen = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   useEffect(() => {
     const onFsChange = () => {
       if (document.fullscreenElement) {
@@ -308,7 +328,7 @@ function Stage({ svg, useMaxWidth, height }) {
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const onWheel = (event) => {
+    const onWheel = (event: WheelEvent) => {
       // Inline: require Ctrl/⌘ so a plain scroll still moves the page. Fullscreen:
       // nothing is behind the diagram, so a plain wheel zooms like an image viewer.
       if (!document.fullscreenElement && !event.ctrlKey && !event.metaKey) return;
@@ -321,7 +341,7 @@ function Stage({ svg, useMaxWidth, height }) {
   }, []);
 
   // Drag by tracking deltas from the pointerdown origin.
-  const handleMove = (event) => {
+  const handleMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;
     // Nothing held? The release happened somewhere we never heard about — the
     // parent Confluence page, which is cross-origin, so our document sees no
@@ -339,11 +359,11 @@ function Stage({ svg, useMaxWidth, height }) {
     });
   };
 
-  const handleDown = (event) => {
+  const handleDown = (event: React.PointerEvent<HTMLDivElement>) => {
     // Don't start a pan when the press lands on the fullscreen exit button:
     // capturing the pointer to the stage steals its pointerup, so the button's
     // click never fires (the cause of the exit working only intermittently).
-    if (event.target.closest('.fs-exit')) return;
+    if ((event.target as Element).closest('.fs-exit')) return;
     drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y };
     setDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -368,7 +388,7 @@ function Stage({ svg, useMaxWidth, height }) {
         // The editor's chosen height is applied as a CSS variable the .sized
         // rules read; the SVG scales to it, keeping its aspect ratio, and the
         // existing pan/zoom reaches anything wider than the column.
-        style={height ? { '--diagram-height': `${height}px` } : undefined}
+        style={height ? ({ '--diagram-height': `${height}px` } as React.CSSProperties) : undefined}
         onPointerDown={handleDown}
         onPointerMove={handleMove}
         onPointerUp={handleUp}
@@ -401,7 +421,7 @@ function Stage({ svg, useMaxWidth, height }) {
       <ToolbarPortal
         stageRef={stageRef}
         zoom={zoom}
-        onZoom={(delta) => {
+        onZoom={(delta: number) => {
           // Zoom toward the middle of the visible diagram.
           const rect = stageRef.current?.getBoundingClientRect();
           if (!rect) return;
@@ -418,16 +438,43 @@ function Stage({ svg, useMaxWidth, height }) {
 
 // Toolbar needs the stage ref and the diagram source; keep the wiring in one place.
 const ToolbarContext = React.createContext('');
-function ToolbarPortal(props) {
+function ToolbarPortal(props: Omit<ToolbarProps, 'source'>) {
   const source = React.useContext(ToolbarContext);
   return <Toolbar {...props} source={source} />;
 }
 
+/**
+ * Diagram settings read from macro config. Every field is optional: config is
+ * authored on the page and may be empty or partial, so each read defaults.
+ */
+type DiagramConfig = {
+  source?: string;
+  theme?: string;
+  mermaidVersion?: string;
+  useMaxWidth?: boolean;
+  height?: number | string;
+  cacheV?: number;
+  svgLight?: string;
+  svgDark?: string;
+};
+
+/**
+ * The reader view's state machine. A discriminated union on `status`, so the
+ * fields each screen needs (the ready SVG, the error line/message) only exist on
+ * the state that carries them.
+ */
+type ViewState =
+  | { status: 'loading' }
+  | { status: 'empty' }
+  | { status: 'deferred' }
+  | { status: 'ready'; svg: string }
+  | { status: 'error'; line: number | null; message: string };
+
 function App() {
-  const [state, setState] = useState({ status: 'loading' });
-  const [config, setConfig] = useState(null);
+  const [state, setState] = useState<ViewState>({ status: 'loading' });
+  const [config, setConfig] = useState<DiagramConfig | null>(null);
   const [visible, setVisible] = useState(false);
-  const deferRef = useRef(null);
+  const deferRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     // Turn on host theming first so the colour mode is resolved before we pick
@@ -522,10 +569,13 @@ function App() {
     };
   }, [state.status, visible, config]);
 
-  // Let the SVG land, measure, then ask the host for the right height.
+  // Let the SVG land, measure, then ask the host for the right height. Depend on
+  // the ready SVG (null on every other state) so a re-render into a new diagram
+  // re-measures; kept in a variable so the dep array stays statically checkable.
+  const readySvg = state.status === 'ready' ? state.svg : null;
   useEffect(() => {
     if (state.status === 'ready') requestAnimationFrame(resize);
-  }, [state.status, state.svg]);
+  }, [state.status, readySvg]);
 
   if (state.status === 'loading') {
     return <div className="message empty">Loading diagram…</div>;
@@ -562,6 +612,10 @@ function App() {
     );
   }
 
+  // Unreachable: status is only 'ready' once config has loaded and decide() ran.
+  // The guard narrows config to non-null for the render below.
+  if (!config) return null;
+
   return (
     <ToolbarContext.Provider value={config.source ?? ''}>
       <div className="root">
@@ -576,4 +630,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root') as HTMLElement).render(<App />);

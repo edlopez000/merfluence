@@ -1,0 +1,39 @@
+{
+  // Type-check-ONLY config. The source is TypeScript, but Vite/esbuild does the
+  // actual build (see vite.view.config.js / vite.config.config.js) — esbuild
+  // strips types without checking them. `tsc --noEmit` (npm run typecheck) is the
+  // type-checker, a correctness gate run in CI's lint job, never a compiler: it
+  // emits nothing and produces no artifact.
+  "compilerOptions": {
+    // Type-check only; never write output.
+    "noEmit": true,
+
+    // Full strict, noImplicitAny included: every function parameter and binding
+    // element is annotated (JSDoc @param / inline @type), so the type-checker has
+    // a real signature to verify at every boundary rather than inferring `any`.
+    "strict": true,
+    // Don't audit dependency .d.ts files — mermaid drags in a large d3/@types
+    // graph whose internal typings are not our correctness concern.
+    "skipLibCheck": true,
+
+    // Mirror the real toolchain: es2020 target (the Vite `target`), ESM, and
+    // bundler resolution so bare/extensionless imports resolve the way Vite
+    // resolves them at build time.
+    "target": "es2020",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+
+    // Everything here runs in the Confluence iframe (DOM) on modern engines.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    // React 19 automatic runtime — matches @vitejs/plugin-react and the eslint
+    // jsx-runtime config (React need not be in scope for JSX).
+    "jsx": "react-jsx"
+  },
+  // Only the shipped source. test/ (vitest/Playwright globals, the window.__pwn
+  // tripwire) and Node scripts/ are a documented later ratchet; the *.config.js
+  // files and build output are not application code.
+  "include": ["src/**/*.ts", "src/**/*.tsx", "types/**/*.d.ts"],
+  "exclude": ["node_modules", "static", "test", "scripts", "*.config.js"]
+}
