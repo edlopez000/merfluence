@@ -44,7 +44,7 @@
     "@codemirror/state": "^6.5.0",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.36.1",
-    "@forge/bridge": "^4.0.0",
+    "@forge/bridge": "^6.0.0",
     "codemirror": "^6.0.1",
     "dompurify": "^3.2.3",
     "mermaid": "^11.4.1",
