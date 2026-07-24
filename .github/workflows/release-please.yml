@@ -19,16 +19,21 @@ on:
   push:
     branches: [main]
 
-# release-please opens/updates its release PR and, on merge, pushes tags and a
-# GitHub Release — so it needs write on both. Scoped to this workflow only.
+# Top-level default is read-only so the elevated token never reaches the
+# checkout or any other step (Scorecard Token-Permissions). The write scopes
+# live on the release-please job below, which is the only thing that needs them.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     name: Maintain release PR
     runs-on: ubuntu-latest
+    # release-please opens/updates its release PR and, on merge, pushes tags and
+    # a GitHub Release — so it needs write on both.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       # SHA-pinned like every action in this repo (see ci.yml).
       # Renovate bumps the pin via the trailing version comment. Config lives in
