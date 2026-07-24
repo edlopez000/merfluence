@@ -20,12 +20,16 @@ export const DEFAULT_MAJOR = '11';
 // registerExternalDiagrams/registerLayoutLoaders ourselves — core already does,
 // and re-registering would only risk double-loading. (Measured 2026-07-11; if a
 // future major changes its default export, re-check that heavy libs stay lazy.)
-const LOADERS = {
+// The two mermaid majors have divergent, large type surfaces, so the loaded
+// module is `any`: render.ts uses only the stable initialize/parse/render calls,
+// which the fixture corpus exercises on both majors.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LOADERS: Record<string, () => Promise<any>> = {
   11: () => import('mermaid').then((m) => m.default),
   10: () => import('mermaid-10').then((m) => m.default),
 };
 
-const RESOLVED = {
+const RESOLVED: Record<string, string> = {
   11: __MERMAID_11_VERSION__,
   10: __MERMAID_10_VERSION__,
 };
@@ -39,13 +43,13 @@ export const VERSION_OPTIONS = [
   { value: '10', label: `Pinned to ${RESOLVED[10]}` },
 ];
 
-export function resolveMajor(pref) {
+export function resolveMajor(pref?: string) {
   if (pref && pref !== 'auto' && LOADERS[pref]) return String(pref);
   return DEFAULT_MAJOR;
 }
 
 /** The exact semver that will do the rendering, for display. */
-export function resolvedVersion(pref) {
+export function resolvedVersion(pref?: string) {
   return RESOLVED[resolveMajor(pref)];
 }
 

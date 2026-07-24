@@ -102,6 +102,13 @@ jobs:
       # no environment and no FORGE_* secrets.
       - name: ESLint
         run: npm run lint
+      # tsc --checkJs over src/ (see tsconfig.json). This is a type-CHECK only —
+      # noEmit, no build artifact — so it belongs beside ESLint as a correctness
+      # gate, not in the bundle build. Folded into this job (rather than a new
+      # one) because staging's `needs:` already lists `lint`, so a type error
+      # blocks deploys with no extra runner, npm ci, or cache key.
+      - name: Type check
+        run: npm run typecheck
       # Formatting is Prettier's alone (eslint-config-prettier is last in
       # eslint.config.js), so it gets its own step: a failure here means "run
       # npm run format", never "fix a bug".

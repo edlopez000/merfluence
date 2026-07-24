@@ -14,9 +14,11 @@
  * we report that rather than dumping prose into the editor as if it were a
  * diagram.
  *
- * @returns {{ source: string } | { error: string }}
  */
-export function extractMermaidSource(text, filename = '') {
+export function extractMermaidSource(
+  text: string,
+  filename = '',
+): { source: string } | { error: string } {
   const fence = String(text ?? '').match(/```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)```/i);
   if (fence) return { source: fence[1].replace(/\s+$/, '') };
   if (/\.(md|markdown)$/i.test(filename)) {
