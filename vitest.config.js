@@ -34,17 +34,17 @@ export default defineConfig({
       exclude: ['src/**/*.html'],
       // The floor measured after each coverage-bearing suite lands, with a
       // couple of points of slack so the real render's run-to-run path variation
-      // can't red the build. The pure lib/ modules sit at ~97%; the remaining
-      // drag is the view DOM code (Stage pan/zoom, Toolbar interactions) that
-      // only a mounted-component driver would reach. Last ratcheted when the
-      // config-save + PNG-export browser tests landed (PNG export extracted to
-      // lib/png-export.ts and covered directly). Ratchet up as more gets
-      // covered — never down.
+      // can't red the build. The pure lib/ modules sit at ~97%. Last ratcheted
+      // when the reader-view (Toolbar/Stage: copy, export, zoom, fullscreen,
+      // wheel, pointer pan) and editor (drag-drop, error gutter, template picker,
+      // settings) interaction tests landed, driven through the mounted components
+      // in jsdom — lifting lines ~72 -> ~95 and branches ~60 -> ~78. Ratchet up
+      // as more gets covered — never down.
       thresholds: {
-        lines: 70,
-        statements: 65,
-        functions: 63,
-        branches: 58,
+        lines: 93,
+        statements: 87,
+        functions: 90,
+        branches: 76,
       },
     },
     projects: [
