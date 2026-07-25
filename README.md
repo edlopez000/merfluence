@@ -3,6 +3,9 @@
 > Diagrams as code for Confluence Cloud. Write [Mermaid](https://mermaid.js.org/), get a rendered diagram — entirely in your browser, with nothing sent anywhere.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/edlopez000/merfluence/actions/workflows/ci.yml/badge.svg)](https://github.com/edlopez000/merfluence/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/edlopez000/merfluence/gh-pages/coverage-badge.json)](https://github.com/edlopez000/merfluence/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/edlopez000/merfluence)](https://github.com/edlopez000/merfluence/releases)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/edlopez000/merfluence/badge)](https://scorecard.dev/viewer/?uri=github.com/edlopez000/merfluence)
 ![Built on Atlassian Forge](https://img.shields.io/badge/Built%20on-Atlassian%20Forge-0052CC)
 ![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D)
@@ -101,7 +104,10 @@ forge install --product confluence -e development --site your-site.atlassian.net
   parse-regression corpus) and a real-Chromium browser suite covering the full
   render pipeline and an XSS end-to-end check. `npm run test:unit` and
   `npm run test:browser` run one at a time; `npm run test:coverage` adds the
-  coverage gate CI enforces.
+  coverage gate CI enforces. The coverage badge above is self-hosted, not from a
+  third-party service: on each push to `main`, CI runs `scripts/coverage-badge.mjs`
+  over the generated `coverage-summary.json` and publishes the resulting shields
+  endpoint JSON to the `gh-pages` branch (`coverage-badge.json`).
 - `forge lint` validates the manifest.
 - `forge tunnel` gives live reload against your development site.
 
