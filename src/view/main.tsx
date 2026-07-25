@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { resolvedVersion } from '../lib/mermaid-registry.js';
 import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
-import { pickCachedSvg } from '../lib/cache.js';
+import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
 import { anchoredZoom, fitView, untransformedRect } from '../lib/zoom.js';
 import { download, exportPng } from '../lib/png-export.js';
@@ -414,18 +414,24 @@ type DiagramConfig = {
   cacheV?: number;
   svgLight?: string;
   svgDark?: string;
+  renderedVersion?: string;
 };
 
 /**
  * The reader view's state machine. A discriminated union on `status`, so the
  * fields each screen needs (the ready SVG, the error line/message) only exist on
  * the state that carries them.
+ *
+ * `ready` carries `version` next to the SVG so the label can never describe a
+ * different render than the one on screen: a cached SVG reports the semver
+ * stored with it, a fresh one reports this bundle's. Reading the version
+ * separately, at label time, is exactly the bug this pairing retires.
  */
 type ViewState =
   | { status: 'loading' }
   | { status: 'empty' }
   | { status: 'deferred' }
-  | { status: 'ready'; svg: string }
+  | { status: 'ready'; svg: string; version: string }
   | { status: 'error'; line: number | null; message: string };
 
 function App() {
@@ -463,7 +469,14 @@ function App() {
     // the page can author, so it gets the same DOMPurify pass a fresh render does.
     const cached = pickCachedSvg(config, theme);
     if (cached) {
-      setState({ status: 'ready', svg: sanitizeSvg(cached) });
+      setState({
+        status: 'ready',
+        svg: sanitizeSvg(cached),
+        // The version stored with the SVG, not this bundle's: the cached render
+        // may predate several Mermaid upgrades. Only a config missing the field
+        // falls back to the computed label.
+        version: pickCachedVersion(config) ?? resolvedVersion(config.mermaidVersion),
+      });
       return;
     }
 
@@ -517,7 +530,10 @@ function App() {
           theme: resolveTheme(config.theme),
           useMaxWidth: config.useMaxWidth !== false,
         });
-        if (!cancelled) setState({ status: 'ready', svg });
+        // This bundle is doing the rendering right now, so its semver is the
+        // truthful label.
+        if (!cancelled)
+          setState({ status: 'ready', svg, version: resolvedVersion(config.mermaidVersion) });
       } catch (err) {
         if (!cancelled) setState({ status: 'error', ...describeError(err) });
       }
@@ -582,7 +598,7 @@ function App() {
           useMaxWidth={config.useMaxWidth !== false}
           height={normalizeHeight(config.height)}
         />
-        <div className="meta">Mermaid {resolvedVersion(config.mermaidVersion)}</div>
+        <div className="meta">Mermaid {state.version}</div>
       </div>
     </ToolbarContext.Provider>
   );

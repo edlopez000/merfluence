@@ -19,8 +19,15 @@
  * v2: caches written by v1 stored a dark-themed SVG in svgLight, because the
  * two theme renders ran in parallel against Mermaid's global singleton and the
  * dark initialize() won the race. Bumping the version discards those.
+ *
+ * v3: caches now carry renderedVersion, the exact Mermaid semver that produced
+ * the stored SVG. v1/v2 caches have no such record, so their version label had
+ * to fall back to the semver in the *current* bundle — which drifts away from
+ * the render as the app upgrades, and quietly misreports the version on the
+ * fast path. Discarding them means every diagram that still shows a number is
+ * showing the right one.
  */
-export const CACHE_VERSION = 2;
+export const CACHE_VERSION = 3;
 
 // Per-string budget. The SVG is persisted verbatim into the page document, so
 // the cost that matters is raw UTF-8 bytes, not the gzipped transfer size.
@@ -31,9 +38,15 @@ const MAX_SVG_BYTES = 45 * 1024;
 
 /**
  * Cache fields merged into a save. Either SVG variant is omitted when it doesn't
- * fit the byte budget; cacheV is always present.
+ * fit the byte budget; cacheV is always present. renderedVersion rides along
+ * only when something was actually cached (see buildCacheFields).
  */
-type CacheFields = { cacheV: number; svgLight?: string; svgDark?: string };
+type CacheFields = {
+  cacheV: number;
+  svgLight?: string;
+  svgDark?: string;
+  renderedVersion?: string;
+};
 
 // SVG can contain multi-byte characters (labels, arrows), so measure encoded
 // bytes rather than string length.
@@ -48,11 +61,23 @@ export function fitsCache(svg: unknown) {
  * Build the cache fields to merge into a save. Either variant that is too large
  * is simply omitted, so a hit is all-or-nothing per theme. cacheV is always
  * written so a save from a newer app version stamps its version onto the config.
+ *
+ * renderedVersion is the semver that rendered these SVGs, kept so the reader can
+ * label a cache hit with the version that actually drew it rather than the one
+ * in whatever bundle happens to be serving the page. Both variants render under
+ * the same version preference, so one field covers the pair. It is written only
+ * when at least one SVG survived: with nothing cached there is no render to
+ * describe, and an unused key would just sit in config going stale.
  */
-export function buildCacheFields(svgLight: string, svgDark: string): CacheFields {
+export function buildCacheFields(
+  svgLight: string,
+  svgDark: string,
+  renderedVersion: string,
+): CacheFields {
   const fields: CacheFields = { cacheV: CACHE_VERSION };
   if (fitsCache(svgLight)) fields.svgLight = svgLight;
   if (fitsCache(svgDark)) fields.svgDark = svgDark;
+  if (fields.svgLight || fields.svgDark) fields.renderedVersion = renderedVersion;
   return fields;
 }
 
@@ -67,4 +92,18 @@ export function pickCachedSvg(
   if (!config || config.cacheV !== CACHE_VERSION) return null;
   const svg = theme === 'dark' ? config.svgDark : config.svgLight;
   return typeof svg === 'string' && svg.length > 0 ? svg : null;
+}
+
+/**
+ * The Mermaid semver that rendered the cached SVG, or null if this config has
+ * none to offer — a stale cacheV, or a hand-edited config missing the field.
+ * Callers fall back to the current build's version, which is the pre-v3
+ * behaviour and the best guess available when the cache doesn't say.
+ */
+export function pickCachedVersion(
+  config: { cacheV?: number; renderedVersion?: unknown } | null | undefined,
+) {
+  if (!config || config.cacheV !== CACHE_VERSION) return null;
+  const version = config.renderedVersion;
+  return typeof version === 'string' && version.length > 0 ? version : null;
 }

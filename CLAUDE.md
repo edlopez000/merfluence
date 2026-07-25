@@ -78,13 +78,16 @@ tokens and keeping `data-color-mode` on the iframe root (observed only as a
 re-render trigger); config saves go through `view.submit({ config: fields })` —
 the wrapper is required (see task 1).
 
-**1. Cache rendered SVG in macro config.** On save, persist `{ svgLight, svgDark }`
-into config alongside `source`, `mermaidVersion`, `theme`, `useMaxWidth`. Gate on
+**1. Cache rendered SVG in macro config.** On save, persist
+`{ svgLight, svgDark, renderedVersion }` into config alongside `source`,
+`mermaidVersion`, `theme`, `useMaxWidth`. Gate on
 size: only cache if each string is < ~45KB (dropped otherwise so the save still
 succeeds). Reader view injects cached SVG (re-sanitized) for the resolved theme
 and loads **zero Mermaid** on a hit. **Done** (`src/lib/cache.js`). The cache is
-versioned via `cacheV`, now at `CACHE_VERSION = 2` (v1 caches stored a
-dark-themed SVG in `svgLight` — a theme race at save time — and are discarded).
+versioned via `cacheV`, now at `CACHE_VERSION = 3` (v1 caches stored a
+dark-themed SVG in `svgLight` — a theme race at save time; v2 caches carried no
+`renderedVersion`, so the reader's version label fell back to the _current_
+bundle's semver and misreported cached renders — both are discarded).
 Note: the save failure seen during testing was a missing `{ config: ... }` wrapper
 in `view.submit` (fixed in `src/lib/host.js`), not config size.
 

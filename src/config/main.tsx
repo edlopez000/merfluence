@@ -11,7 +11,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 
 import { mermaid as mermaidLang } from './mermaid-lang.js';
 import { renderDiagram, describeError } from '../lib/render.js';
-import { VERSION_OPTIONS } from '../lib/mermaid-registry.js';
+import { resolvedVersion, VERSION_OPTIONS } from '../lib/mermaid-registry.js';
 import { TEMPLATES, DEFAULT_SOURCE } from '../lib/templates.js';
 import { buildCacheFields, CACHE_VERSION } from '../lib/cache.js';
 import { extractMermaidSource } from '../lib/mermaid-file.js';
@@ -278,7 +278,10 @@ function Panel({ initial }: { initial: InitialConfig }) {
         theme: 'dark',
         useMaxWidth,
       });
-      cacheFields = buildCacheFields(light.svg, dark.svg);
+      // Stamp the semver that just did the rendering. Read here rather than in
+      // the view, because this build is the one holding the renderer; a reader
+      // opening the page years later has a different bundle and no way to know.
+      cacheFields = buildCacheFields(light.svg, dark.svg, resolvedVersion(mermaidVersion));
     } catch {
       cacheFields = { cacheV: CACHE_VERSION };
     }
