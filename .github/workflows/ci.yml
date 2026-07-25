@@ -72,6 +72,19 @@ jobs:
         run: |
           echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
           node -e "const t=require('./coverage/coverage-summary.json').total; for (const k of ['lines','statements','functions','branches']) console.log('- '+k+': '+t[k].pct+'%')" >> "$GITHUB_STEP_SUMMARY"
+      # Hand the coverage summary to the coverage-badge job below, which turns it
+      # into the README's self-hosted shields badge. Main-push-only: PR runs already
+      # have the number in their job summary and must not touch the public badge, so
+      # uploading here keeps the artifact (and the badge job) off every PR. SHA-pinned
+      # like every action in this file; same pin as scorecard.yml uses.
+      - name: Upload coverage summary
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-summary
+          path: coverage/coverage-summary.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Both bundles build
         run: npm run build
       - name: Report resolved versions
@@ -79,6 +92,65 @@ jobs:
           echo "### Mermaid versions" >> "$GITHUB_STEP_SUMMARY"
           node -p "'auto/11 -> ' + require('./node_modules/mermaid/package.json').version" >> "$GITHUB_STEP_SUMMARY"
           node -p "'pinned 10 -> ' + require('./node_modules/mermaid-10/package.json').version" >> "$GITHUB_STEP_SUMMARY"
+
+  # Publish the coverage badge. Self-hosted, no Codecov: reuse the coverage summary
+  # the corpus job already produced (uploaded above), turn it into a shields endpoint
+  # JSON, and push that one file to the gh-pages branch, where README's badge reads it
+  # via a raw.githubusercontent URL (GitHub Pages need not be enabled). The whole
+  # point is that no coverage data leaves for a third-party SaaS and no new secret is
+  # added — the built-in GITHUB_TOKEN pushes the branch.
+  #
+  # Main-push-only (matches the artifact upload), so it never runs on a PR. `contents:
+  # write` is scoped to THIS job so the elevated token stays off the test/lint/audit
+  # jobs and every PR run — the same least-privilege posture as the rest of this file.
+  coverage-badge:
+    name: Publish coverage badge
+    needs: [corpus]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Serialise gh-pages writes so two quick pushes to main don't race a
+    # non-fast-forward on the same branch. cancel-in-progress: false — let an
+    # in-flight publish finish rather than leaving the branch half-updated.
+    concurrency:
+      group: coverage-badge
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      # download-artifact and upload-artifact version independently; this is the
+      # current download major. SHA-pinned like every action here.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-summary
+      # Build the shields endpoint JSON and commit it onto gh-pages with plain git —
+      # no third-party publish action. actions/checkout persists the GITHUB_TOKEN on
+      # the origin remote, so the worktree push authenticates with no extra wiring. An
+      # isolated worktree keeps gh-pages off the checked-out main tree; on first run
+      # the branch is created as an orphan (no main history) holding just the badge.
+      # Commit only when the file changed, so an unchanged percentage adds no churn.
+      - name: Publish badge to gh-pages
+        run: |
+          set -euo pipefail
+          node scripts/coverage-badge.mjs coverage-summary.json > /tmp/coverage-badge.json
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages:refs/remotes/origin/gh-pages --depth=1
+            git worktree add -B gh-pages /tmp/ghp origin/gh-pages
+          else
+            git worktree add --detach /tmp/ghp
+            git -C /tmp/ghp checkout --orphan gh-pages
+            git -C /tmp/ghp rm -rf . >/dev/null 2>&1 || true
+          fi
+          cp /tmp/coverage-badge.json /tmp/ghp/coverage-badge.json
+          git -C /tmp/ghp add coverage-badge.json
+          if git -C /tmp/ghp diff --cached --quiet; then
+            echo "coverage badge unchanged; nothing to publish"
+          else
+            git -C /tmp/ghp commit -m "chore: update coverage badge"
+            git -C /tmp/ghp push origin gh-pages
+          fi
 
   lint:
     name: Lint
