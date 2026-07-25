@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, waitFor } from '@testing-library/react';
 import { TEMPLATES } from '../src/lib/templates.js';
+import { CACHE_VERSION } from '../src/lib/cache.js';
+import { resolvedVersion } from '../src/lib/mermaid-registry.js';
 
 /**
  * The config editor's Panel orchestration: a debounced live preview, and a save
@@ -123,7 +125,10 @@ describe('save', () => {
       mermaidVersion: 'auto',
       theme: 'auto',
       useMaxWidth: true,
-      cacheV: 2,
+      cacheV: CACHE_VERSION,
+      // Stamped so the reader can label a cache hit with the version that drew
+      // it, rather than whatever bundle serves the page later (issue #37).
+      renderedVersion: resolvedVersion('auto'),
     });
     expect(payload.svgLight).toContain('data-theme="light"');
     expect(payload.svgDark).toContain('data-theme="dark"');
@@ -143,9 +148,11 @@ describe('save', () => {
 
     await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
     const payload = h.submitConfig.mock.calls[0][0];
-    expect(payload).toMatchObject({ source: SOURCE, cacheV: 2 });
+    expect(payload).toMatchObject({ source: SOURCE, cacheV: CACHE_VERSION });
     expect(payload).not.toHaveProperty('svgLight');
     expect(payload).not.toHaveProperty('svgDark');
+    // Nothing cached, so there is no render for renderedVersion to describe.
+    expect(payload).not.toHaveProperty('renderedVersion');
   });
 });
 

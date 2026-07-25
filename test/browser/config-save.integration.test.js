@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderDiagram } from '../../src/lib/render.js';
 import { buildCacheFields, fitsCache, CACHE_VERSION } from '../../src/lib/cache.js';
+import { resolvedVersion } from '../../src/lib/mermaid-registry.js';
 
 /**
  * The config editor's save flow, driven through a real browser render.
@@ -10,7 +11,7 @@ import { buildCacheFields, fitsCache, CACHE_VERSION } from '../../src/lib/cache.
  * (test/config-app.test.jsx) already drives that orchestration in jsdom, but it
  * MOCKS renderDiagram — so it proves the two renders happen in order, yet cannot
  * prove that two genuinely sequential Mermaid renders come out in DIFFERENT
- * themes. That is precisely the regression CACHE_VERSION = 2 exists to guard: v1
+ * themes. That is precisely the regression the v2 cache bump exists to guard: v1
  * ran the renders in parallel, both initialize() calls raced, and the same theme
  * won both SVGs. Only a real render can show they diverge, so that check lives
  * here in the Chromium project rather than in jsdom.
@@ -34,7 +35,7 @@ async function renderBothThemes(source = SOURCE) {
 }
 
 describe('save-time sequential light/dark render', () => {
-  it('produces genuinely theme-distinct SVGs (the CACHE_VERSION=2 guard)', async () => {
+  it('produces genuinely theme-distinct SVGs (the v2 cache-bump guard)', async () => {
     const { lightSvg, darkSvg } = await renderBothThemes();
 
     // Both are real, non-trivial SVG documents.
@@ -53,11 +54,14 @@ describe('save-time sequential light/dark render', () => {
   it('assembles both variants into the cache with the current cacheV', async () => {
     const { lightSvg, darkSvg } = await renderBothThemes();
 
-    const fields = buildCacheFields(lightSvg, darkSvg);
+    const fields = buildCacheFields(lightSvg, darkSvg, resolvedVersion('auto'));
     expect(fields.cacheV).toBe(CACHE_VERSION);
     // Real diagrams this small comfortably fit the byte budget, so both cache.
     expect(fields.svgLight).toBe(lightSvg);
     expect(fields.svgDark).toBe(darkSvg);
+    // The version these SVGs were actually rendered by, so the reader can label
+    // the cache hit without guessing from its own bundle (issue #37).
+    expect(fields.renderedVersion).toBe(resolvedVersion('auto'));
   });
 });
 
@@ -78,23 +82,27 @@ describe('size-gated cache assembly', () => {
   it('drops only the oversized side while always stamping cacheV', async () => {
     const light = await renderDiagram({ source: SOURCE, theme: 'light' });
 
-    // Light fits, dark is oversized -> only svgLight survives.
-    const fields = buildCacheFields(light.svg, OVERSIZED);
+    // Light fits, dark is oversized -> only svgLight survives, and it still
+    // carries the version that rendered it.
+    const fields = buildCacheFields(light.svg, OVERSIZED, resolvedVersion('auto'));
     expect(fields.cacheV).toBe(CACHE_VERSION);
     expect(fields.svgLight).toBe(light.svg);
+    expect(fields.renderedVersion).toBe(resolvedVersion('auto'));
     expect(fields).not.toHaveProperty('svgDark');
 
     // Both oversized -> neither survives, but cacheV is still written so a save
-    // from this app version stamps its version onto the config.
-    const none = buildCacheFields(OVERSIZED, OVERSIZED);
+    // from this app version stamps its version onto the config. With no SVG
+    // cached there is no render to attribute, so renderedVersion stays off.
+    const none = buildCacheFields(OVERSIZED, OVERSIZED, resolvedVersion('auto'));
     expect(none).toEqual({ cacheV: CACHE_VERSION });
   });
 });
 
 describe('submit payload shape', () => {
-  // Assemble the config fields exactly as save() does (main.tsx:266-289), from
+  // Assemble the config fields exactly as save() does (main.tsx:266-292), from
   // real SVG. save() spreads: { source, mermaidVersion, theme, useMaxWidth,
-  // ...(height ? { height } : {}), ...buildCacheFields(light, dark) }.
+  // ...(height ? { height } : {}),
+  // ...buildCacheFields(light, dark, resolvedVersion(mermaidVersion)) }.
   function assembleConfig({ lightSvg, darkSvg, height }) {
     const sizing = height ? { height } : {};
     return {
@@ -103,7 +111,7 @@ describe('submit payload shape', () => {
       theme: 'auto',
       useMaxWidth: true,
       ...sizing,
-      ...buildCacheFields(lightSvg, darkSvg),
+      ...buildCacheFields(lightSvg, darkSvg, resolvedVersion('auto')),
     };
   }
 
@@ -117,6 +125,7 @@ describe('submit payload shape', () => {
       theme: 'auto',
       useMaxWidth: true,
       cacheV: CACHE_VERSION,
+      renderedVersion: resolvedVersion('auto'),
     });
     expect(config.svgLight).toBe(lightSvg);
     expect(config.svgDark).toBe(darkSvg);

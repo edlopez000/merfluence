@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent } from '@testing-library/react';
 
+import { CACHE_VERSION } from '../src/lib/cache.js';
+import { resolvedVersion } from '../src/lib/mermaid-registry.js';
+
 /**
  * The reader view's App state machine — the decision that makes the zero-backend
  * cache worthwhile: paint a cache hit without loading Mermaid, defer a miss until
@@ -124,7 +127,7 @@ describe('cache hit', () => {
     h.getConfig.mockResolvedValue({
       source: 'flowchart TD\n A-->B',
       theme: 'light',
-      cacheV: 2,
+      cacheV: CACHE_VERSION,
       // A tampered cache: the <script> must be stripped on the way in, proving
       // the reader re-sanitizes config it did not itself produce.
       svgLight:
@@ -176,6 +179,71 @@ describe('cache miss', () => {
   });
 });
 
+// The label is the diagram's provenance: a bug report quotes it. On a cache hit
+// the SVG on screen was rendered by whatever version the *editor* was running at
+// save time, which drifts from this bundle's as the app upgrades — so the number
+// has to come from the cache, not from the registry constant (issue #37).
+describe('version label', () => {
+  const meta = () => root().querySelector('.meta')?.textContent;
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
+
+  // A version this bundle cannot possibly be shipping, so a passing assertion
+  // can only mean the label was read out of the cache.
+  const OLD_VERSION = '11.4.0';
+
+  it('reports the version that rendered a cached SVG, not the current build', async () => {
+    h.getConfig.mockResolvedValue({
+      source: 'flowchart TD\n A-->B',
+      theme: 'light',
+      mermaidVersion: 'auto',
+      cacheV: CACHE_VERSION,
+      renderedVersion: OLD_VERSION,
+      svgLight: SVG,
+    });
+    await mountView();
+
+    expect(meta()).toBe(`Mermaid ${OLD_VERSION}`);
+    expect(meta()).not.toContain(resolvedVersion('auto'));
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the current build when a hit carries no stored version', async () => {
+    // Reachable only by hand-editing config: cacheV matches but the field is
+    // gone. Nothing better is knowable, so the pre-v3 label stands.
+    h.getConfig.mockResolvedValue({
+      source: 'flowchart TD\n A-->B',
+      theme: 'light',
+      mermaidVersion: 'auto',
+      cacheV: CACHE_VERSION,
+      svgLight: SVG,
+    });
+    await mountView();
+
+    expect(meta()).toBe(`Mermaid ${resolvedVersion('auto')}`);
+  });
+
+  it('reports this build on a fresh render, ignoring a stale cached version', async () => {
+    // Stale cacheV -> cache miss -> this bundle renders, so its own semver is
+    // the honest label even though the config still carries an older stamp.
+    h.getConfig.mockResolvedValue({
+      source: 'flowchart TD\n A-->B',
+      theme: 'light',
+      mermaidVersion: '11',
+      cacheV: CACHE_VERSION - 1,
+      renderedVersion: OLD_VERSION,
+      svgLight: CACHED_SVG,
+    });
+    h.renderDiagram.mockResolvedValue({ svg: SVG });
+    await mountView();
+
+    await act(async () => {
+      ioInstances[0].intersect();
+    });
+
+    expect(meta()).toBe(`Mermaid ${resolvedVersion('11')}`);
+  });
+});
+
 describe('render error', () => {
   it('surfaces the line number describeError extracts', async () => {
     h.getConfig.mockResolvedValue({ source: 'flowchart TD\n A-->B', theme: 'light' });
@@ -196,7 +264,7 @@ describe('host theme flip', () => {
     h.getConfig.mockResolvedValue({
       source: 'flowchart TD\n A-->B',
       theme: 'auto',
-      cacheV: 2,
+      cacheV: CACHE_VERSION,
       svgLight:
         '<svg xmlns="http://www.w3.org/2000/svg"><rect id="rect-light" width="10" height="10"/></svg>',
       svgDark:
@@ -232,7 +300,12 @@ const CACHED_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg"><rect id="r" width="10" height="10"/></svg>';
 
 async function mountReady(source = 'flowchart TD\n A-->B') {
-  h.getConfig.mockResolvedValue({ source, theme: 'light', cacheV: 2, svgLight: CACHED_SVG });
+  h.getConfig.mockResolvedValue({
+    source,
+    theme: 'light',
+    cacheV: CACHE_VERSION,
+    svgLight: CACHED_SVG,
+  });
   await mountView();
 }
 
