@@ -28,10 +28,29 @@ const fixtures = Object.fromEntries(
   ]),
 );
 
-// A representative subset spanning several grammars, all valid in both majors.
-// Rendering the full 18-type corpus across both themes is slower than it is
-// informative; the pipeline is type-agnostic, so a cross-section proves it.
+// Every fixture renders once; a six-type subset also renders in dark.
+//
+// The split is by what each axis actually proves. Rendering is NOT type-agnostic
+// the way our wrapper is: Mermaid lazy-loads a different layout engine per type
+// (cytoscape for architecture/mindmap, others for xychart/sankey/gitgraph/…),
+// and that per-type integration is the seam a Mermaid bump breaks. parse.test.js
+// runs all 18 on both majors but never invokes a layout engine, so only a real
+// render catches it — hence one render for every type, derived from the glob so
+// a new fixture is covered the moment it lands (CLAUDE.md: "new diagram type ->
+// new fixture").
+//
+// Theme is the cheaper axis: it varies colours and inline styles, not layout
+// code, and the place theme genuinely bites — the save-time light/dark race
+// behind CACHE_VERSION = 2 — is covered in the view tests. So the second theme
+// stays on the original cross-section rather than doubling the corpus.
+const ALL = Object.keys(fixtures).sort();
 const SUBSET = ['flowchart', 'sequence', 'class', 'state', 'er', 'pie'];
+
+// A cold cytoscape/ELK/KaTeX chunk load plus layout comfortably outruns vitest's
+// 5s default on a CI runner. Local to these cases, so nothing else loosens: a
+// timeout here would be indistinguishable from the regression this suite exists
+// to catch.
+const RENDER_TIMEOUT = 20_000;
 
 // Inject rendered markup the way the reader view does, so getBoundingClientRect
 // reflects real layout. Each case cleans up after itself.
@@ -48,33 +67,59 @@ afterEach(() => {
   mounted = [];
 });
 
+async function expectLaidOut(name, theme) {
+  const source = fixtures[name];
+  expect(source, `fixture ${name} exists`).toBeTruthy();
+
+  const { svg, major } = await renderDiagram({ source, theme });
+  expect(major).toBe('11');
+
+  const host = mount(svg);
+  const el = host.querySelector('svg');
+  // A real render, not a stub: the element exists and the browser gave it
+  // non-zero layout (which is exactly what getBBox feeds).
+  expect(el).not.toBeNull();
+  const box = el.getBoundingClientRect();
+  expect(box.width).toBeGreaterThan(0);
+  expect(box.height).toBeGreaterThan(0);
+
+  const measured = measureSvg(host);
+  expect(measured.width).toBeGreaterThan(0);
+  expect(measured.height).toBeGreaterThan(0);
+}
+
 describe('renderDiagram end-to-end', () => {
-  for (const theme of ['light', 'dark']) {
-    describe(`theme: ${theme}`, () => {
-      for (const name of SUBSET) {
-        it(`renders ${name} to a laid-out <svg>`, async () => {
-          const source = fixtures[name];
-          expect(source, `fixture ${name} exists`).toBeTruthy();
+  // The corpus is discovered, not listed, so guard the discovery itself: a glob
+  // that silently resolved to nothing would leave a suite that passes by running
+  // no renders at all. parse.test.js keeps the same guard for the same reason.
+  it('discovered the whole fixture corpus', () => {
+    expect(ALL.length).toBeGreaterThanOrEqual(18);
+    for (const name of SUBSET) expect(ALL, `subset member ${name}`).toContain(name);
+  });
 
-          const { svg, major } = await renderDiagram({ source, theme });
-          expect(major).toBe('11');
+  describe('every diagram type renders', () => {
+    for (const name of ALL) {
+      it(
+        `renders ${name} to a laid-out <svg>`,
+        async () => {
+          await expectLaidOut(name, 'light');
+        },
+        RENDER_TIMEOUT,
+      );
+    }
+  });
 
-          const host = mount(svg);
-          const el = host.querySelector('svg');
-          // A real render, not a stub: the element exists and the browser gave
-          // it non-zero layout (which is exactly what getBBox feeds).
-          expect(el).not.toBeNull();
-          const box = el.getBoundingClientRect();
-          expect(box.width).toBeGreaterThan(0);
-          expect(box.height).toBeGreaterThan(0);
-
-          const measured = measureSvg(host);
-          expect(measured.width).toBeGreaterThan(0);
-          expect(measured.height).toBeGreaterThan(0);
-        });
-      }
-    });
-  }
+  describe('theme: dark', () => {
+    for (const name of SUBSET) {
+      it(
+        `renders ${name} to a laid-out <svg>`,
+        async () => {
+          await expectLaidOut(name, 'dark');
+        },
+        RENDER_TIMEOUT,
+      );
+    }
+  });
 });
 
 describe('the three layers compose on a real SVG (positive control)', () => {
