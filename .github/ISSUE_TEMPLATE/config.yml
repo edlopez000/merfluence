@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question, how-to, or idea
+    url: https://github.com/edlopez000/merfluence/discussions
+    about: Ask in Q&A or float an idea in Ideas. Answers stay searchable for the next person.
+  - name: Support request
+    url: https://lopezedward.atlassian.net/servicedesk/customer/portal/1
+    about: Installation trouble, admin questions, or anything you would rather not discuss in public. No Atlassian account needed.
+  - name: Security vulnerability
+    url: https://github.com/edlopez000/merfluence/security/advisories/new
+    about: Report privately through GitHub Security Advisories — never in a public issue. See SECURITY.md.

@@ -1,0 +1,94 @@
+name: Bug report
+description: A diagram renders wrongly, the editor misbehaves, or something breaks.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report.
+
+        **Not a bug?** Questions and ideas go to
+        [Discussions](https://github.com/edlopez000/merfluence/discussions);
+        support requests go to the
+        [service desk](https://lopezedward.atlassian.net/servicedesk/customer/portal/1).
+
+        **Found a security problem?** Stop here and follow
+        [SECURITY.md](https://github.com/edlopez000/merfluence/blob/main/SECURITY.md)
+        instead — please do not describe it in a public issue.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Diagram source
+      description: >
+        The Mermaid source that triggers it, ideally reduced to the smallest
+        diagram that still reproduces. This is pasted into a Mermaid code block,
+        so no backticks are needed.
+      # Deliberately `text`, not `mermaid`: a bug report often contains source
+      # that does not render, and GitHub would show a diagram error in place of
+      # the source we need to read.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mermaid-version
+    attributes:
+      label: Mermaid version
+      description: >
+        The version pinned on the diagram, from the editor's version dropdown.
+        The app ships two Mermaid majors and they do not always behave alike, so
+        this is usually what makes a report reproducible. The exact version that
+        rendered a diagram also appears on hover in the reader view.
+      options:
+        - Auto (tracks the current release)
+        - '11'
+        - '10'
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: rendered-version
+    attributes:
+      label: Version shown on hover
+      description: >
+        Optional, but the most precise answer. A cached diagram reports the
+        version stored with it at save time, which may be older than the version
+        the app ships today.
+      placeholder: e.g. 11.4.1
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where it happens
+      options:
+        - Reader view (the rendered diagram on the page)
+        - Editor (the macro configuration dialog)
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: e.g. Firefox 141 on Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: >
+        Screenshots, browser-console errors, or details of your Confluence site
+        that seem relevant.

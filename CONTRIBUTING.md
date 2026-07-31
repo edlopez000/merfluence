@@ -5,6 +5,10 @@ process**. For the architecture and the constraints that define the app (the
 zero-scope manifest, client-side rendering, the three sanitization layers), read
 [CLAUDE.md](CLAUDE.md).
 
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). If you
+are here to ask a question rather than to send a change,
+[SUPPORT.md](SUPPORT.md) points you at the right channel.
+
 ## The one invariant
 
 Merfluence requests **no scopes, no egress, no resolver** — only

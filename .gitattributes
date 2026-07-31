@@ -1,0 +1,15 @@
+# Normalize to LF in the repository, matching `.editorconfig`'s `end_of_line`.
+* text=auto eol=lf
+
+# Generated: excluded from language stats and collapsed in diffs by default.
+package-lock.json linguist-generated=true
+static/**/dist/** linguist-generated=true
+
+# release-please owns the changelog and rewrites it on every release.
+CHANGELOG.md linguist-generated=true
+
+# Binary assets — never diffed or line-ending-converted.
+*.webp binary
+*.png binary
+*.jpg binary
+*.pdf binary
