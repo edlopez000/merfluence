@@ -2,8 +2,9 @@
 
 Thanks for helping out. This file covers **commit conventions and the release
 process**. For the architecture and the constraints that define the app (the
-zero-scope manifest, client-side rendering, the three sanitization layers), read
-[CLAUDE.md](CLAUDE.md).
+zero-scope manifest, client-side rendering, the layered sanitization), read
+[CLAUDE.md](CLAUDE.md). For rollback and incident procedure, read
+[docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). If you
 are here to ask a question rather than to send a change,

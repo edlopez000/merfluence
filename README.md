@@ -71,13 +71,15 @@ permissions:
 
 Diagram source is stored as macro configuration in the page's own body and rendered to SVG by JavaScript in the reader's browser. The single declared permission — inline styles — is required only because Mermaid writes `style="…"` attributes onto the SVG it generates. Styles only; never scripts, never `unsafe-eval`.
 
-Because macro configuration can be authored by anyone who can edit a page and is rendered for everyone who can read it, all diagram input is treated as untrusted. Three independent layers protect readers:
+Because macro configuration can be authored by anyone who can edit a page and is rendered for everyone who can read it, all diagram input is treated as untrusted. Readers are protected in depth:
 
 - `securityLevel: 'strict'` — Mermaid `click` directives parse but stay inert.
 - `htmlLabels: false` — no `<foreignObject>`, so labels cannot inject HTML.
 - **DOMPurify** sanitizes every rendered SVG, including cached SVG re-checked on read.
 
-The three are independent; any one of them failing should not open a hole.
+These are not three interchangeable walls. The first two are Mermaid settings that shape the SVG **before** it reaches the sanitizer, narrowing what has to be judged: no bound handlers, no HTML in labels, so the output is plain SVG rather than arbitrary embedded markup. DOMPurify is the layer that actually enforces the result. Separately, a sanitizer hook strips references to external hosts — an `<image href="https://…">` or a `fill: url(https://…)` — so that painting a diagram cannot quietly fetch anything, which is what keeps the zero-egress claim true at render time rather than only in the manifest.
+
+Stated plainly, the residual trust is DOMPurify itself and the SVG profile it is configured with (`USE_PROFILES: { svg, svgFilters }`), whose allow-list decides what survives. Defense in depth, then — each layer makes the next one's job smaller, and a break in any one of them is worth reporting even if the others happen to contain it.
 
 The formal statement of all this is the [privacy policy](https://edwardlopez.dev/privacy). To report something that undermines any of the claims above, follow [SECURITY.md](SECURITY.md) — privately, please, not in a public issue.
 
@@ -85,7 +87,7 @@ The formal statement of all this is the [privacy policy](https://edwardlopez.dev
 
 **Rendering and caching.** Rendering is deterministic for a given source, version, theme, and width setting, so the editor renders each diagram to SVG once on save — for both light and dark — and stores the result in the macro's configuration. A reader with a cache hit displays that SVG and loads no Mermaid at all. On a cache miss, rendering is deferred behind an `IntersectionObserver` until the macro scrolls into view, so a long page never downloads the renderer for diagrams below the fold.
 
-**Bundle size.** Mermaid is large, and every macro instance is its own iframe. Merfluence keeps this in check three ways: cached diagrams load no renderer; uncached diagrams load it lazily on scroll; and Mermaid's `mermaid.core` build lazy-loads each diagram type and layout engine on demand. In practice, a page of plain flowcharts downloads roughly 850 KB and defers about 2.3 MB of heavier libraries (Cytoscape, KaTeX, ELK) that load only when a diagram actually needs them. Build assets are content-hashed and served from the Forge CDN with a long-lived, immutable cache policy, so each chunk is fetched once and reused across iframes and reloads.
+**Bundle size.** Mermaid is large, and every macro instance is its own iframe. Merfluence keeps this in check three ways: cached diagrams load no renderer; uncached diagrams load it lazily on scroll; and Mermaid's `mermaid.core` build lazy-loads each diagram type and layout engine on demand. In practice, a page of plain flowcharts downloads roughly 850 KB and defers about 2.3 MB of heavier libraries (Cytoscape, KaTeX, ELK) that load only when a diagram actually needs them. Build assets are content-hashed and served from the Forge CDN with a long-lived, immutable cache policy, which is what makes a chunk eligible to be reused across iframes and reloads rather than refetched. How much reuse a given browser actually performs has not been measured here, so that is stated as the cache policy it is, not as a benchmark.
 
 **Version currency.** Mermaid ships breaking changes across major versions, so every diagram carries a version setting: `auto` tracks the current release, or a diagram can pin `11` or `10`. Each major is a separate dynamic import, so a page never downloads a version it doesn't use. A regression corpus (`test/parse.test.js`) runs every fixture through `mermaid.parse()` on each dependency bump to confirm that previously valid syntax still parses — the failure that actually matters — and CI gates version upgrades on that corpus. The exact Mermaid version that rendered a diagram is shown on hover, so bug reports arrive with a version attached — a cached diagram reports the version stored with it at save time, which may be older than the one the app ships today.
 
