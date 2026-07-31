@@ -66,10 +66,13 @@ Anything that breaks one of those claims, including:
 
 - **A way to get script execution out of a rendered diagram.** Macro config is
   authored by anyone who can edit a page and rendered for everyone who can read
-  it, so this is the boundary that matters most. Three independent layers stand
-  behind it — Mermaid's `securityLevel: 'strict'`, `htmlLabels: false`, and
-  DOMPurify over the emitted SVG — and a break in any _one_ of them is a valid
-  report even if the other two happen to contain it.
+  it, so this is the boundary that matters most. Three layers stand behind it,
+  in depth rather than side by side: Mermaid's `securityLevel: 'strict'` and
+  `htmlLabels: false` shape the SVG before it is sanitized, and DOMPurify over
+  the emitted SVG enforces the result. A break in any _one_ of them is a valid
+  report even if the others happen to contain it — including a case where the
+  Mermaid settings alone would have held, because the enforcing layer is the one
+  we rely on.
 - **Anything that causes data to leave the page** — a network request to any
   host, a diagram's source reaching a third party, or a way to make the app
   request a permission it does not declare.

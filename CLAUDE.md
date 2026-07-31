@@ -43,8 +43,13 @@ end-to-end. `npm run test:coverage` enforces the v8 coverage thresholds in CI.
 
 - Rendering stays **client-side**; diagram source lives only in macro config.
 - Keep `securityLevel: 'strict'`, `htmlLabels: false`, and **DOMPurify** on all
-  rendered SVG. The three layers are independent; any one failing must not open
-  a hole.
+  rendered SVG — all three, always. They work in depth, not side by side: the
+  two Mermaid settings shape what reaches the sanitizer, and DOMPurify enforces
+  the result. So removing either Mermaid setting is not "losing one of three
+  equal layers" — it widens what the sanitizer alone has to hold, and the
+  sanitizer is the only layer that enforces. Also keep the egress hook in
+  `render.js` that strips external `href` / `url()` refs; it defends the
+  zero-egress claim, which is a separate property from script execution.
 - The suite in `test/` must stay green — parse corpus, unit projects, and the
   browser XSS E2E alike. **New diagram type → new fixture.**
 - Don't break the version-pinning registry (`src/lib/mermaid-registry.js`).
