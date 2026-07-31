@@ -1,0 +1,9 @@
+# Global owner — pairs with the `main-ruleset` branch protection, so every PR
+# lands with a review request on the maintainer.
+* @edlopez000
+
+# The security claim itself. These files are the product; a change to any of
+# them is a change to what the app promises.
+/manifest.yml @edlopez000
+/test/manifest.test.js @edlopez000
+/SECURITY.md @edlopez000

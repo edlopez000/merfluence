@@ -12,8 +12,14 @@ Report privately through GitHub Security Advisories:
 [Report a vulnerability](https://github.com/edlopez000/merfluence/security/advisories/new).
 That channel is private between you and the maintainers until a fix ships.
 
-If GitHub is not workable for you, open a public issue containing no detail
-beyond a request for a private contact channel, and we will follow up.
+If GitHub is not workable for you, mail <support@edwardlopez.dev> asking for a
+private contact channel, or open a public issue containing no detail beyond that
+same request, and we will follow up.
+
+**Please do not raise a vulnerability on the
+[service desk](https://lopezedward.atlassian.net/servicedesk/customer/portal/1).**
+It is the right place for support requests and the wrong place for this — use
+the advisory link above, which stays private until a fix ships.
 
 What helps most, roughly in order:
 
@@ -50,7 +56,9 @@ reaches users within about an hour of release.
 The app is a Confluence Cloud macro that runs entirely in the reader's browser.
 Diagram source lives in the macro's own configuration on the Confluence page; it
 is never transmitted to us, because there is nowhere for it to go — the app
-declares no scopes, no egress, and no backend (see `manifest.yml`).
+declares no scopes, no egress, and no backend (see `manifest.yml`). The
+[privacy policy](https://edwardlopez.dev/privacy) states the same commitment
+formally.
 
 ### In scope
 

@@ -6,6 +6,7 @@
 [![CI](https://github.com/edlopez000/merfluence/actions/workflows/ci.yml/badge.svg)](https://github.com/edlopez000/merfluence/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/edlopez000/merfluence/gh-pages/coverage-badge.json)](https://github.com/edlopez000/merfluence/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/edlopez000/merfluence)](https://github.com/edlopez000/merfluence/releases)
+[![Atlassian Marketplace](https://img.shields.io/badge/Marketplace-Merfluence-0052CC)](https://marketplace.atlassian.com/apps/1504902125)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/edlopez000/merfluence/badge)](https://scorecard.dev/viewer/?uri=github.com/edlopez000/merfluence)
 ![Built on Atlassian Forge](https://img.shields.io/badge/Built%20on-Atlassian%20Forge-0052CC)
 ![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D)
@@ -36,7 +37,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 
 ### From the Atlassian Marketplace
 
-Install Merfluence from its Marketplace listing. Then, on any Confluence page, type `/mermaid` (or `/merfluence`) and insert the macro.
+Install Merfluence from its [Marketplace listing](https://marketplace.atlassian.com/apps/1504902125). Then, on any Confluence page, type `/mermaid` (or `/merfluence`) and insert the macro.
 
 ### From source
 
@@ -77,6 +78,8 @@ Because macro configuration can be authored by anyone who can edit a page and is
 - **DOMPurify** sanitizes every rendered SVG, including cached SVG re-checked on read.
 
 The three are independent; any one of them failing should not open a hole.
+
+The formal statement of all this is the [privacy policy](https://edwardlopez.dev/privacy). To report something that undermines any of the claims above, follow [SECURITY.md](SECURITY.md) — privately, please, not in a public issue.
 
 ## How it works
 
@@ -130,9 +133,18 @@ test/                   Unit suite and parse-regression fixtures
 test/browser/           Chromium suite: render pipeline and XSS end-to-end
 ```
 
+## Support
+
+- **Questions and ideas** — [GitHub Discussions](https://github.com/edlopez000/merfluence/discussions).
+- **Bugs and feature requests** — [open an issue](https://github.com/edlopez000/merfluence/issues/new/choose).
+- **Support requests** — the [service desk](https://lopezedward.atlassian.net/servicedesk/customer/portal/1). No Atlassian account needed.
+- **Security vulnerabilities** — [SECURITY.md](SECURITY.md), privately, never a public channel.
+
+[SUPPORT.md](SUPPORT.md) has the full routing, including the private contact address.
+
 ## Contributing
 
-Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and the release process. New diagram types should ship with a fixture in `test/fixtures/`, and the test suite must stay green (`npm test`) before changes are merged.
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and the release process, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for the community standards everyone here is held to. New diagram types should ship with a fixture in `test/fixtures/`, and the test suite must stay green (`npm test`) before changes are merged.
 
 ## License
 

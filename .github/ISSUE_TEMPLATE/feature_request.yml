@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a capability or an improvement.
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Still thinking it through? [Discussions →
+        Ideas](https://github.com/edlopez000/merfluence/discussions) is a better
+        place to shape a rough idea before it becomes an issue.
+
+        One thing worth knowing first: Merfluence requests **no API scopes, no
+        external network access, and no backend**, and that constraint is the
+        product rather than an implementation detail. A feature that would need
+        any of the three is very unlikely to ship — see
+        [CONTRIBUTING.md](https://github.com/edlopez000/merfluence/blob/main/CONTRIBUTING.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Merfluence makes hard or impossible?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+      description: Describe the behaviour you want. Sketches and examples welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Including any workaround you are using today.
+
+  - type: checkboxes
+    id: invariant
+    attributes:
+      label: The zero-scope invariant
+      options:
+        - label: >
+            As far as I can tell, this would not require a new API scope,
+            external network access, or a backend function.
