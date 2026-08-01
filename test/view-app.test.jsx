@@ -143,6 +143,28 @@ describe('cache hit', () => {
     // The whole point: a cache hit loads zero Mermaid.
     expect(h.renderDiagram).not.toHaveBeenCalled();
   });
+
+  // A cache written before #92 has no name and — because the sanitizer of the
+  // day dropped `role` — not even the role Mermaid put there. Naming it at
+  // inject time rather than at render time is what let those caches keep working
+  // instead of being invalidated by a CACHE_VERSION bump, which the reader view
+  // could never have repopulated (it cannot write config).
+  it('gives a cached SVG that predates the naming code a text alternative', async () => {
+    h.getConfig.mockResolvedValue({
+      source: 'sequenceDiagram\n Alice->>John: hi',
+      theme: 'light',
+      cacheV: CACHE_VERSION,
+      svgLight:
+        '<svg xmlns="http://www.w3.org/2000/svg" id="mmd-old-0" aria-roledescription="sequence">' +
+        '<g><text>Alice</text></g></svg>',
+    });
+    await mountView();
+
+    const svg = root().querySelector('svg');
+    expect(svg.getAttribute('aria-label')).toBe('Sequence diagram');
+    expect(svg.getAttribute('role')).toBe('graphics-document document');
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+  });
 });
 
 describe('cache miss', () => {

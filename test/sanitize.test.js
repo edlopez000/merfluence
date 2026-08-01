@@ -219,4 +219,40 @@ describe('sanitizeSvg preserves what Mermaid legitimately emits', () => {
     expect(doc.querySelector('marker')).not.toBeNull();
     expect(doc.querySelector('feGaussianBlur')).not.toBeNull();
   });
+
+  // The text alternative (WCAG 2.1 SC 1.1.1) is only as good as what survives
+  // this policy. `role` in particular is NOT in DOMPurify's svg attribute list
+  // — it lives in the html one, which USE_PROFILES:{svg} doesn't pull in — so it
+  // needs an explicit ADD_ATTR entry, and it was silently being dropped before
+  // #92. The rest ride on ALLOW_ARIA_ATTR and the svg tag profile; asserting
+  // them here means a DOMPurify major that narrows either one fails loudly
+  // rather than quietly un-naming every diagram.
+  it('keeps the role and aria wiring that names the diagram', () => {
+    const { doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg" role="graphics-document document" ' +
+        'aria-roledescription="Flowchart diagram" aria-labelledby="t1" aria-describedby="d1" ' +
+        'aria-label="spare">' +
+        '<title id="t1">Deploy pipeline</title>' +
+        '<desc id="d1">Code flows from pull request to production.</desc>' +
+        '<rect /></svg>',
+    );
+    const svg = doc.querySelector('svg');
+    expect(svg.getAttribute('role')).toBe('graphics-document document');
+    expect(svg.getAttribute('aria-roledescription')).toBe('Flowchart diagram');
+    expect(svg.getAttribute('aria-labelledby')).toBe('t1');
+    expect(svg.getAttribute('aria-describedby')).toBe('d1');
+    expect(svg.getAttribute('aria-label')).toBe('spare');
+    // The referenced elements have to survive too, ids included — an
+    // aria-labelledby pointing at nothing is not a name.
+    expect(doc.querySelector('title#t1').textContent).toBe('Deploy pipeline');
+    expect(doc.querySelector('desc#d1').textContent).toContain('production');
+  });
+
+  it('keeps role="img" on a diagram the author described', () => {
+    const { doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t1">' +
+        '<title id="t1">Deploy pipeline</title></svg>',
+    );
+    expect(doc.querySelector('svg').getAttribute('role')).toBe('img');
+  });
 });

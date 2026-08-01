@@ -34,6 +34,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 - A per-diagram display size (Small, Medium, or Large), or the diagram's natural size
 - Pan, zoom, and fullscreen navigation, with export to SVG or PNG
 - Full keyboard operation — focus a diagram and pan, zoom, reset, or go fullscreen without a mouse
+- A text alternative on every diagram for screen readers, from your own `accTitle` / `accDescr`
 - Copy the source from any rendered diagram
 
 ## Installation
@@ -71,6 +72,27 @@ The same keys work while a toolbar button has focus, so Tabbing to the toolbar d
 <kbd>Esc</kbd> hands the keyboard back: the diagram stops acting on arrow keys until you focus it
 again. Pressing it in fullscreen leaves fullscreen _and_ releases in the same press; leaving with
 <kbd>F</kbd> instead keeps the diagram focused, so <kbd>F</kbd> takes you straight back in.
+
+### Screen readers
+
+Every rendered diagram carries a text alternative. Without one of your own it is announced by type
+— "Flowchart diagram" — and its node labels stay readable, so a screen reader can still walk the
+contents.
+
+Describe the diagram yourself and you get a much better result. Mermaid's own
+[`accTitle` / `accDescr`](https://mermaid.js.org/config/accessibility.html) go straight into the
+source:
+
+```
+flowchart LR
+    accTitle: Deploy pipeline
+    accDescr: A pull request is reviewed, then built, then released to production.
+    PR[Pull request] --> Review --> Build --> Production
+```
+
+The diagram is then announced as a single image named "Deploy pipeline", with your description read
+out in full — the node-by-node reading is dropped, because your sentence says it better. Neither
+line renders on screen; for a visible heading use the diagram's own `title`.
 
 ## Privacy & security
 

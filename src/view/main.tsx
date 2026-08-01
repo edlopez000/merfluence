@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
+import { ensureAccessibleName } from '../lib/a11y-name.js';
 import { resolvedVersion } from '../lib/mermaid-registry.js';
 import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
 import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
@@ -504,8 +505,9 @@ function Stage({
         // the keys named in the label — there's no visible affordance to read
         // them off. role="group" rather than "application": application would
         // hand this whole subtree's keystrokes to us and take the SVG away from
-        // a screen reader's browse mode, which we'd gain nothing by doing.
-        // (The diagram's *text alternative* is a separate concern — see #92.)
+        // a screen reader's browse mode, which we'd gain nothing by doing — and
+        // would now cost us something, since the SVG inside carries its own role
+        // and accessible name (see a11y-name.js) and needs to stay reachable.
         tabIndex={0}
         role="group"
         aria-roledescription="interactive diagram"
@@ -644,11 +646,14 @@ function App() {
     // and stored it in config. Paint it and never load Mermaid — the whole win.
     // Re-sanitize: this SVG comes from macro config, which anyone who can edit
     // the page can author, so it gets the same DOMPurify pass a fresh render does.
+    // ensureAccessibleName runs first, in the same order as the fresh-render
+    // path — and it is what gives a diagram cached before that code existed a
+    // name, without invalidating every stored cache to do it.
     const cached = pickCachedSvg(config, theme);
     if (cached) {
       setState({
         status: 'ready',
-        svg: sanitizeSvg(cached),
+        svg: sanitizeSvg(ensureAccessibleName(cached)),
         // The version stored with the SVG, not this bundle's: the cached render
         // may predate several Mermaid upgrades. Only a config missing the field
         // falls back to the computed label.
