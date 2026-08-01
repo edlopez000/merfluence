@@ -146,6 +146,71 @@ describe('sanitizeSvg strips external resource references', () => {
   });
 });
 
+describe('sanitizeSvg strips external references from <style> element text', () => {
+  // The attribute cases above are the ones #64 closed. CSS reaches the network
+  // just as readily from element *text*, and <style> is allow-listed by the SVG
+  // profile — Mermaid emits one on every diagram — so it has to be scrubbed
+  // rather than dropped. Each case asserts on the parsed <style> text, not on
+  // the output string, so none can pass on serialization luck.
+  function styleText(css) {
+    const { out, doc } = sanitizedDoc(
+      `<svg xmlns="http://www.w3.org/2000/svg"><style>${css}</style><rect width="10" height="10" /></svg>`,
+    );
+    return { out, css: doc.querySelector('style')?.textContent ?? '' };
+  }
+
+  it('drops an external @import url()', () => {
+    const { out, css } = styleText('@import url(https://evil.example/x.css);');
+    expect(css).not.toContain('evil.example');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('drops a bare-string external @import', () => {
+    // The string form carries no url() token, so the url() strip alone misses it.
+    const { out, css } = styleText('@import "https://evil.example/x.css";');
+    expect(css).not.toContain('evil.example');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('scrubs an external url() in a rule body', () => {
+    const { out, css } = styleText('.a{fill:url(https://evil.example/leak)}');
+    expect(css).not.toContain('evil.example');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('scrubs an external background-image url()', () => {
+    const { out, css } = styleText('.b{background-image:url("https://evil.example/pixel.png")}');
+    expect(css).not.toContain('evil.example');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('scrubs a protocol-relative //host url()', () => {
+    const { out, css } = styleText('.c{background-image:url(//evil.example/p.png)}');
+    expect(css).not.toContain('evil.example');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('blanks the block when a CSS escape evades the pattern strip', () => {
+    // `\68` is `h`, so this fetches https://… while matching nothing that looks
+    // for "https". The verify pass decodes escapes, sees the ref survived, and
+    // fails closed by dropping the whole block.
+    const { out, css } = styleText('.d{background-image:url(\\68 ttps://evil.example/p.png)}');
+    expect(css).toBe('');
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('leaves the rest of the SVG intact while scrubbing the style', () => {
+    // Proves the cases above fail on the CSS, not on the whole input being dropped.
+    const { doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<style>.a{fill:url(https://evil.example/leak)}</style>' +
+        '<rect width="10" height="10" /></svg>',
+    );
+    expect(doc.querySelector('rect')?.getAttribute('width')).toBe('10');
+    expect(doc.querySelector('style')).not.toBeNull();
+  });
+});
+
 describe('sanitizeSvg keeps internal references the fix must not break', () => {
   // Positive controls for the egress guard. Mermaid draws arrowheads, gradients
   // and clip-paths as internal url(#id) refs; a blanket url() strip would erase
@@ -174,6 +239,41 @@ describe('sanitizeSvg keeps internal references the fix must not break', () => {
         '<g clip-path="url(#c)"><rect width="10" height="10" /></g></svg>',
     );
     expect(doc.querySelector('g').getAttribute('clip-path')).toBe('url(#c)');
+  });
+
+  it('keeps internal url(#id) refs inside a <style> element', () => {
+    const css = '.c{marker-end:url(#arrow)} .d{fill:url(#grad)}';
+    const { doc } = sanitizedDoc(
+      `<svg xmlns="http://www.w3.org/2000/svg"><style>${css}</style></svg>`,
+    );
+    expect(doc.querySelector('style').textContent).toBe(css);
+  });
+
+  it('keeps a realistic Mermaid theme <style> byte-for-byte', () => {
+    // The load-bearing keep-test: Mermaid puts its theming in a <style> on every
+    // diagram, so a scrub that blanked or mangled this would unstyle everything
+    // while the egress cases above still passed.
+    const css =
+      '#mmd-1{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#333;}' +
+      '#mmd-1 .error-icon{fill:#552222;}' +
+      '#mmd-1 .marker{fill:#333333;stroke:#333333;}' +
+      '#mmd-1 .node rect{fill:#ECECFF;stroke:#9370DB;stroke-width:1px;}' +
+      '#mmd-1 .edgePath .path{stroke:#333333;stroke-width:2.0px;marker-end:url(#arrowhead);}' +
+      '#mmd-1 .cluster rect{fill:url(#gradient);}';
+    const { doc } = sanitizedDoc(
+      `<svg xmlns="http://www.w3.org/2000/svg"><style>${css}</style></svg>`,
+    );
+    expect(doc.querySelector('style').textContent).toBe(css);
+  });
+
+  it('keeps a url() that merely mentions a host in a content string', () => {
+    // The verify pass fails closed, so its detectors are narrow on purpose: a
+    // stylesheet naming a URL in text must not blank the whole block.
+    const css = '.e::after{content:"see https://example.com for docs";}';
+    const { doc } = sanitizedDoc(
+      `<svg xmlns="http://www.w3.org/2000/svg"><style>${css}</style></svg>`,
+    );
+    expect(doc.querySelector('style').textContent).toBe(css);
   });
 
   it('keeps a data: image href (inline, no egress — per policy)', () => {

@@ -73,13 +73,19 @@ function assertInert(host) {
 }
 
 /**
- * No attribute references an external network host — the egress guard. An
- * external <image href> or a style url(http…) would fetch when painted, leaking
- * the reader's IP/UA to an arbitrary host. Internal url(#id) refs are fine.
+ * Nothing references an external network host — the egress guard. An external
+ * <image href>, a style url(http…) or an @import would fetch when painted,
+ * leaking the reader's IP/UA to an arbitrary host. Internal url(#id) refs are
+ * fine.
+ *
+ * This walks attributes *and* the text of every <style>. CSS reaches the
+ * network from element text just as readily as from a style attribute, and a
+ * <style> is the one node Mermaid legitimately emits that carries CSS as text.
  */
 function assertNoExternalRefs(host) {
   const external = /^\s*(?:https?:)?\/\//i;
   const externalUrlFn = /url\(\s*['"]?\s*(?:https?:)?\/\//i;
+  const externalImport = /@import\s+['"]?\s*(?:https?:)?\/\//i;
   for (const el of host.querySelectorAll('*')) {
     for (const attr of el.attributes) {
       // xmlns/xmlns:* are namespace identifiers, not fetched — ignore them.
@@ -97,6 +103,23 @@ function assertNoExternalRefs(host) {
       ).toBe(false);
     }
   }
+
+  for (const style of host.querySelectorAll('style')) {
+    const raw = style.textContent ?? '';
+    // Decode CSS escapes before testing: `url(\68 ttps://…)` is a live network
+    // ref that a regex looking for "https" would never see. The browser resolves
+    // the escape, so the assertion has to as well.
+    const css = decodeCssEscapes(raw);
+    expect(externalUrlFn.test(css), `unexpected external url() in <style>: ${raw}`).toBe(false);
+    expect(externalImport.test(css), `unexpected external @import in <style>: ${raw}`).toBe(false);
+  }
+}
+
+/** Mirrors the decoder in render.ts; kept local so the assertion is independent. */
+function decodeCssEscapes(value) {
+  return value
+    .replace(/\\([0-9a-fA-F]{1,6})[ \t\n]?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/\\(.)/g, '$1');
 }
 
 // Payloads that parse as valid Mermaid but carry an attack in attacker-authored
@@ -142,6 +165,45 @@ describe('malicious diagram source stays inert end-to-end', () => {
   }
 });
 
+/**
+ * The egress guard, driven from ordinary *diagram source* rather than from a
+ * tampered cache.
+ *
+ * Mermaid's `%%{init}%%` directive can set `themeCSS`, and the emitted SVG
+ * carries that string in a <style>. Mermaid's own directive sanitizer deletes
+ * values containing `<`, `>` or `url(data:` — but not `url(https:` — and
+ * `themeCSS` is not in its protected `secure` key list, so the value arrives
+ * intact. That makes a <style>-borne external ref reachable by anyone who can
+ * edit a page, not just by someone hand-editing stored config.
+ *
+ * These are egress cases, not execution cases: nothing here tries to run code,
+ * so they assert on assertNoExternalRefs rather than the __pwn tripwire.
+ */
+describe('external refs in diagram source do not egress', () => {
+  const THEME_CSS_SOURCES = {
+    'themeCSS url() via init directive': `%%{init: {'themeCSS': '.node rect { background-image: url(https://evil.example/leak.png); }'}}%%
+flowchart TD
+  A --> B`,
+
+    'themeCSS @import via init directive': `%%{init: {'themeCSS': '@import url(https://evil.example/x.css);'}}%%
+flowchart TD
+  A --> B`,
+  };
+
+  for (const [name, source] of Object.entries(THEME_CSS_SOURCES)) {
+    it(name, async () => {
+      const { svg } = await renderDiagram({ source });
+      const host = injectAndProvoke(svg);
+      await Promise.resolve();
+
+      assertNoExternalRefs(host);
+      // Positive control: the diagram still rendered. Otherwise a case that
+      // failed to parse would pass this test while proving nothing.
+      expect(host.querySelector('svg')).not.toBeNull();
+    });
+  }
+});
+
 describe('tampered cached SVG stays inert end-to-end', () => {
   // The reader view re-sanitizes SVG pulled from macro config before injecting
   // it, because that config is an untrusted boundary someone may have hand-edited
@@ -155,6 +217,13 @@ describe('tampered cached SVG stays inert end-to-end', () => {
     // Egress vectors: no script, but a fetch when painted. See assertNoExternalRefs.
     'external image href tracking pixel': `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/pixel.png" width="1" height="1"/></svg>`,
     'external url() in a style fill': `<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:url(https://evil.example/f.svg#p)" width="10" height="10"/></svg>`,
+    // The same egress, one level down: CSS in element *text* rather than in an
+    // attribute. Mermaid emits a real <style>, so these are the shape a
+    // tampered cache would take.
+    'external url() in a style element': `<svg xmlns="http://www.w3.org/2000/svg"><style>.n rect{background-image:url(https://evil.example/pixel.png)}</style><rect width="10" height="10"/></svg>`,
+    'external @import url() in a style element': `<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(https://evil.example/x.css);</style><rect width="10" height="10"/></svg>`,
+    'external @import string in a style element': `<svg xmlns="http://www.w3.org/2000/svg"><style>@import "https://evil.example/x.css";</style><rect width="10" height="10"/></svg>`,
+    'css-escaped external url() in a style element': `<svg xmlns="http://www.w3.org/2000/svg"><style>.n rect{background-image:url(\\68 ttps://evil.example/pixel.png)}</style><rect width="10" height="10"/></svg>`,
   };
 
   for (const [name, markup] of Object.entries(TAMPERED)) {

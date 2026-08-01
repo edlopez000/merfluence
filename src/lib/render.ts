@@ -92,11 +92,69 @@ function isExternalRef(value: string) {
   return /^\s*(?:https?:)?\/\//i.test(value) || /^\s*https?:/i.test(value);
 }
 
-/** Strip `url(http…)` / `url(//host…)` occurrences, leaving `url(#id)` intact. */
+/** An external network target inside a `url(...)` token. */
+const EXTERNAL_URL_FN = /url\(\s*['"]?\s*(?:https?:)?\/\//i;
+
+/**
+ * An external network target on an `@import`. The at-rule takes either a
+ * `url(...)` or a bare string, and the bare-string form is invisible to
+ * EXTERNAL_URL_FN — which is exactly why it needs its own pattern.
+ */
+const EXTERNAL_IMPORT = /@import\s+['"]?\s*(?:https?:)?\/\//i;
+
+/**
+ * Strip `url(http…)` / `url(//host…)` occurrences and external `@import`
+ * at-rules, leaving `url(#id)` intact.
+ */
 function stripExternalUrlRefs(value: string) {
-  // Match a CSS url() whose target is an external network ref; drop the whole
-  // token. Internal `url(#…)` and `data:` targets don't match and survive.
-  return value.replace(/url\(\s*['"]?\s*(?:https?:)?\/\/[^)]*\)/gi, '');
+  return (
+    value
+      // @import first, and as a whole statement. Stripping just the url() out of
+      // `@import url(https://…);` would leave `@import ;` — invalid CSS — and the
+      // bare-string form `@import "https://…";` has no url() token to strip at
+      // all. Dropping the rule outright handles both. Nothing legitimate in a
+      // rendered Mermaid SVG imports a stylesheet.
+      .replace(/@import\b[^;]*;?/gi, (rule) =>
+        EXTERNAL_IMPORT.test(rule) || EXTERNAL_URL_FN.test(rule) ? '' : rule,
+      )
+      // Then the url() tokens. Match a CSS url() whose target is an external
+      // network ref; drop the whole token. Internal `url(#…)` and `data:`
+      // targets don't match and survive.
+      .replace(/url\(\s*['"]?\s*(?:https?:)?\/\/[^)]*\)/gi, '')
+  );
+}
+
+/**
+ * Resolve CSS escape sequences (`\68` → `h`, `\.` → `.`).
+ *
+ * Used for *detection only* — the decoded string is never returned to the DOM.
+ * CSS lets any character be written as an escape, so `url(\68 ttps://evil/x)`
+ * fetches perfectly well while matching no pattern that looks for "https".
+ */
+function decodeCssEscapes(value: string) {
+  return value
+    .replace(/\\([0-9a-fA-F]{1,6})[ \t\n]?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/\\(.)/g, '$1');
+}
+
+/**
+ * Scrub the CSS text of a `<style>` element, failing closed.
+ *
+ * The pattern-based strip above is the same one the attribute path uses, but
+ * element text is a roomier hiding place, so its result is verified: decode
+ * escapes and look again. If an external ref survived, the strip was evaded and
+ * we drop the whole block rather than ship CSS we know still egresses.
+ *
+ * Blanking is safe here. Mermaid's theme CSS is colours, strokes and fonts — it
+ * references no network host — so a legitimate diagram never trips the verify.
+ * The detectors are deliberately narrow (an external target inside `url(` or
+ * after `@import`, not "any string containing //") so that a stylesheet merely
+ * *mentioning* a URL in, say, a `content:` string is not blanked.
+ */
+function scrubStyleText(css: string) {
+  const scrubbed = stripExternalUrlRefs(css);
+  const decoded = decodeCssEscapes(scrubbed);
+  return EXTERNAL_URL_FN.test(decoded) || EXTERNAL_IMPORT.test(decoded) ? '' : scrubbed;
 }
 
 // Presentation attributes that can carry a `url(...)` paint/reference. `style`
@@ -142,6 +200,27 @@ DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
   if (URL_BEARING_ATTRS.has(name) && /url\(/i.test(value)) {
     data.attrValue = stripExternalUrlRefs(value);
   }
+});
+
+/**
+ * The same egress guard, one level down: CSS carried as element *text* rather
+ * than in an attribute.
+ *
+ * The hook above is attribute-scoped by construction, so it never sees a
+ * `<style>` block — and `<style>` is allow-listed by the SVG profile, so an
+ * `@import` or `background-image: url(https://…)` inside one reaches the reader
+ * and fetches on paint. This closes that path.
+ *
+ * Scrubbed, not stripped: Mermaid puts its theming in a `<style>` on every
+ * diagram it renders, so dropping the element would unstyle every diagram.
+ * The element is legitimate; only external references in it are not.
+ */
+DOMPurify.addHook('uponSanitizeElement', (node, data) => {
+  if (data.tagName !== 'style') return;
+
+  const css = node.textContent ?? '';
+  const scrubbed = scrubStyleText(css);
+  if (scrubbed !== css) node.textContent = scrubbed;
 });
 
 /**
