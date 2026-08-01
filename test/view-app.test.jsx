@@ -468,6 +468,27 @@ describe('toolbar: fullscreen', () => {
     expect(document.exitFullscreen).toHaveBeenCalledTimes(1);
   });
 
+  // A host that refuses fullscreen rejects the promise rather than throwing.
+  // The reader is granted it in practice, so this path exists for the config
+  // modal's iframe — but the fallback lives in the shared Stage, so it is
+  // reachable from here too and is asserted where the rest of Stage is.
+  it('falls back to the CSS maximize when requestFullscreen rejects', async () => {
+    await mountReady();
+    const stage = stageEl();
+    stage.requestFullscreen = vi.fn(() => Promise.reject(new TypeError('blocked')));
+
+    await act(async () => {
+      fireEvent.click(btnByText(/^fullscreen$/i));
+    });
+    expect(stage.className).toMatch(/maximized/);
+
+    // The button stays a toggle: pressing it again leaves the fallback.
+    await act(async () => {
+      fireEvent.click(btnByText(/^fullscreen$/i));
+    });
+    expect(stage.className).not.toMatch(/maximized/);
+  });
+
   it('snapshots on enter and restores + scrolls back on exit', async () => {
     await mountReady();
     const stage = stageEl();

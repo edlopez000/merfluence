@@ -43,13 +43,20 @@ export default defineConfig({
       //
       // Re-measured when the diagram text alternative (a11y-name.js) landed:
       // the numbers had drifted well clear of the old floor, which had stopped
-      // gating anything. Now lines 95.8 / statements 90.8 / functions 91.6 /
+      // gating anything. Then lines 95.8 / statements 90.8 / functions 91.6 /
       // branches 82.5.
+      //
+      // Re-measured again when Stage moved to src/components/ and the editor
+      // preview started rendering it (issue #105): lines 96.1 / statements 91.4
+      // / functions 93.4 / branches 82.9. Only functions and branches are
+      // ratcheted here — raising lines or statements to match would leave under
+      // half a point of slack, and the browser project's real-render path
+      // variation is worth more than that.
       thresholds: {
         lines: 95,
         statements: 90,
-        functions: 91,
-        branches: 81,
+        functions: 92,
+        branches: 82,
       },
     },
     projects: [

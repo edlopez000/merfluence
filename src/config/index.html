@@ -138,42 +138,276 @@
         font-size: 13px;
       }
 
+      /* overflow: hidden, not auto — the shared Stage below clips and pans
+         instead of the pane scrolling, so a wheel or a drag reaches the diagram
+         rather than the scrollbar. */
       .preview {
         flex: 1;
         min-height: 0;
-        overflow: auto;
+        overflow: hidden;
         padding: 12px;
         display: flex;
-        align-items: flex-start;
+        align-items: stretch;
         justify-content: center;
       }
-      .preview svg {
+
+      /* ---------------------------------------------------------------- */
+      /* Shared Stage (src/components/Stage.tsx)                          */
+      /* ---------------------------------------------------------------- */
+      /* The reader's stage rules, copied from src/view/index.html so the same
+         component looks and sizes the same in both bundles. Duplicated rather
+         than extracted: the two Vite bundles have separate HTML shells, and a
+         shared-CSS build step to save forty lines would cost more than it saves.
+         Keep the two copies in step when either changes.
+         Deliberately NOT copied: the html:has(.stage.no-shrink) width rules,
+         which exist only to stop an oversized diagram stretching the reader's
+         auto-sizing iframe. The modal is a fixed box, so they mean nothing here. */
+
+      /* The stage fills the pane so there is a large surface to drag on and a
+         definite box to clip against, rather than hugging the diagram the way
+         the reader's does inside a page column. */
+      .preview .root {
+        position: relative;
+        display: flex;
+        flex: 1;
+        min-width: 0;
+      }
+      .preview .stage {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .stage {
+        /* Containing block for the two controls that float over the diagram (the
+           keyboard hint and the fullscreen exit). */
+        position: relative;
+        overflow: hidden;
+        cursor: grab;
+        /* Dragging pans the diagram; without this the drag selects the SVG's
+           text labels instead. The source is right there in the other pane. */
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .stage.dragging {
+        cursor: grabbing;
+      }
+      /* The stage is focusable (it takes the arrow/zoom keys), so it needs a
+         visible focus indicator. Inset offset so the ring is not clipped by the
+         pane's overflow: hidden. */
+      .stage:focus-visible {
+        outline: 2px solid var(--ds-border-focused, #388bff);
+        outline-offset: -2px;
+      }
+      /* The pan layer shrinks to the diagram's width and centres itself, so a
+         diagram narrower than the pane sits in the middle instead of hugging the
+         left. max-width keeps Mermaid's shrink-to-fit. */
+      .pan {
+        width: fit-content;
+        max-width: 100%;
+        margin: 0 auto;
+      }
+      .stage svg {
+        display: block;
         max-width: 100%;
         height: auto;
       }
+      .stage.no-shrink .pan {
+        max-width: none;
+      }
+      .stage.no-shrink svg {
+        max-width: none;
+      }
 
-      /* Sized preview: with no explicit height the wrapper hugs the diagram;
-         once a Size preset sets one, the SVG scales to fill it, keeping its
-         aspect ratio. Mirrors the reader's .stage.sized so the preview matches
-         what readers get. */
-      .preview-diagram {
-        display: inline-block;
-        max-width: 100%;
+      /* An explicit height chosen in the Size dropdown (see SIZE_PRESETS in
+         src/lib/sizing.ts). Same rules as the reader's, so what the author sees
+         here is what the page renders. */
+      .stage.sized:not(:fullscreen):not(.maximized) .pan {
+        max-width: none;
       }
-      .preview-svg {
-        display: block;
-        height: 100%;
-      }
-      .preview-diagram.sized {
-        height: var(--diagram-height);
-      }
-      /* !important for the same reason as the reader's .stage.sized svg: Mermaid
-         writes an inline max-width/width when useMaxWidth is on. */
-      .preview-diagram.sized svg {
-        display: block;
-        height: 100% !important;
+      /* !important beats the inline max-width/width Mermaid writes onto the SVG
+         when useMaxWidth is on. */
+      .stage.sized:not(:fullscreen):not(.maximized) svg {
+        height: var(--diagram-height) !important;
         width: auto !important;
         max-width: none !important;
+      }
+
+      /* Maximize. The Forge config modal's iframe may not carry
+         allow="fullscreen", in which case requestFullscreen rejects and Stage
+         falls back to the .maximized class — pinned with CSS to this iframe's
+         viewport, which is the modal. Both are styled here so whichever the host
+         grants looks the same. */
+      .stage:fullscreen,
+      .stage.maximized {
+        background: var(--ds-surface, #fff);
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      .stage.maximized {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+      }
+
+      /* The keyboard shortcuts, shown only while the preview holds keyboard
+         focus — the one moment they're useful. pointer-events: none so they
+         never swallow a drag that crosses them. */
+      .keys {
+        display: none;
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: calc(100% - 16px);
+        z-index: 1;
+        font-size: 11px;
+        line-height: 1.3;
+        color: var(--ds-text-subtlest, #626f86);
+        background: var(--ds-surface-overlay, #fff);
+        border: 1px solid var(--ds-border, #dfe1e6);
+        border-radius: 4px;
+        padding: 3px 8px;
+        pointer-events: none;
+      }
+      /* F maximizes and then leaves, so the chip says one or the other. */
+      .keys-fs {
+        display: none;
+      }
+      .stage:fullscreen .keys-inline,
+      .stage.maximized .keys-inline {
+        display: none;
+      }
+      .stage:fullscreen .keys-fs,
+      .stage.maximized .keys-fs {
+        display: inline;
+      }
+      .root:has(:focus-visible) .keys,
+      /* Always when maximized: the toolbar is hidden there, so the keys are the
+         only zoom/reset controls left. */
+      .stage:fullscreen .keys,
+      .stage.maximized .keys {
+        display: block;
+      }
+
+      /* Exit control, only visible when maximized (the toolbar is hidden there). */
+      .fs-exit {
+        display: none;
+      }
+      .stage:fullscreen .fs-exit,
+      .stage.maximized .fs-exit {
+        display: inline-flex;
+        align-items: center;
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 1;
+        appearance: none;
+        border: 1px solid var(--ds-border, #dfe1e6);
+        border-radius: 6px;
+        /* background-color (not the `background` shorthand) so the hover overlay
+           below layers ON TOP of this opaque fill. The button floats directly
+           over the diagram, so its fill must stay opaque. */
+        background-color: var(--ds-surface-overlay, #fff);
+        color: var(--ds-text, #172b4d);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      .stage:fullscreen .fs-exit:hover,
+      .stage.maximized .fs-exit:hover {
+        background-image: linear-gradient(
+          var(--ds-background-neutral-subtle-hovered, #091e420f),
+          var(--ds-background-neutral-subtle-hovered, #091e420f)
+        );
+      }
+      .stage:fullscreen .fs-exit:focus-visible,
+      .stage.maximized .fs-exit:focus-visible {
+        outline: 2px solid var(--ds-border-focused, #388bff);
+        outline-offset: 1px;
+      }
+
+      /* The zoom / fit / maximize toolbar. No Copy source or Export here — those
+         are reader actions, injected into Stage by the view bundle only. */
+      .toolbar {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        display: flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: 6px;
+        background: var(--ds-surface-overlay, #fff);
+        border: 1px solid var(--ds-border, #dfe1e6);
+        opacity: 0;
+        transition: opacity 120ms ease-in;
+      }
+      .root:hover .toolbar,
+      .toolbar:focus-within,
+      /* A keyboard user focusing the diagram has no pointer to hover with, so
+         reveal the controls for them too. */
+      .root:has(.stage:focus-visible) .toolbar,
+      /* A failure message lives in the toolbar; hiding the toolbar the moment the
+         pointer leaves would take the message with it. */
+      .toolbar:has(.status) {
+        opacity: 1;
+      }
+
+      .toolbar button {
+        appearance: none;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--ds-text-subtle, #44546f);
+        font: inherit;
+        font-size: 12px;
+        line-height: 1;
+        padding: 6px 8px;
+        cursor: pointer;
+      }
+      .toolbar button:hover {
+        background: var(--ds-background-neutral-subtle-hovered, #f1f2f4);
+      }
+      .toolbar button:focus-visible {
+        outline: 2px solid var(--ds-border-focused, #388bff);
+        outline-offset: 1px;
+      }
+      /* The zoom percentage doubles as the "reset view" control (click to reset
+         zoom + pan). It inherits .toolbar button styling, including hover. */
+      .toolbar .zoom-level {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 6px;
+        font-variant-numeric: tabular-nums;
+        min-width: 4ch;
+      }
+
+      /* A failure, shown for a few seconds. Absolutely positioned below the
+         toolbar so a long message never stretches the button row. */
+      .toolbar .status {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 4px;
+        max-width: 90vw;
+        padding: 4px 8px;
+        border: 1px solid var(--ds-border-danger, #c9372c);
+        border-radius: 4px;
+        background: var(--ds-background-danger, #ffedeb);
+        color: var(--ds-text-danger, #ae2e24);
+        font-size: 12px;
+        line-height: 1.4;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .toolbar {
+          transition: none;
+        }
       }
 
       .diagnostic {

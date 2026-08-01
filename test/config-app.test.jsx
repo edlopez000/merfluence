@@ -40,6 +40,17 @@ const SOURCE = 'flowchart TD\n A-->B';
 
 beforeEach(() => {
   for (const key of Object.keys(h)) h[key].mockReset();
+  // The preview renders the shared Stage (src/components/Stage.tsx), which binds
+  // a ResizeObserver and drives pointer capture — none of which jsdom implements.
+  // Stub as no-ops so the handlers run; their math belongs to zoom.ts's own tests.
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  HTMLElement.prototype.setPointerCapture ??= () => {};
+  HTMLElement.prototype.releasePointerCapture ??= () => {};
+  HTMLElement.prototype.scrollIntoView ??= () => {};
   h.resolveTheme.mockImplementation((pref) => (pref === 'dark' ? 'dark' : 'light'));
   h.submitConfig.mockResolvedValue(undefined);
   h.getConfig.mockResolvedValue({ source: SOURCE });
@@ -83,7 +94,136 @@ describe('live preview', () => {
       theme: 'light',
       useMaxWidth: true,
     });
-    expect(document.querySelector('.preview-svg svg')).not.toBeNull();
+    expect(document.querySelector('.preview .stage .pan svg')).not.toBeNull();
+  });
+});
+
+// --- Interactive preview (issue #105) ----------------------------------------
+// The preview renders the same Stage the reader view does, so authoring a large
+// diagram no longer means saving and reopening just to look at it. The zoom/pan
+// math is zoom.ts's and the reader's suite covers the component itself; what's
+// asserted here is that the editor really mounts it, wired to the editor's own
+// Size / full-width settings, and that it carries the reader-only actions.
+
+describe('interactive preview', () => {
+  const stageEl = () => document.querySelector('.preview .stage');
+  const zoomLabel = () => document.querySelector('.preview .zoom-level')?.textContent;
+  const panTransform = () => document.querySelector('.preview .pan').style.transform;
+  const btnByText = (re) =>
+    [...document.querySelectorAll('.preview button')].find((b) => re.test(b.textContent.trim()));
+
+  it('offers zoom, fit and maximize but not the reader-only copy/export', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    expect(btnByText(/^−|^-$/)).toBeDefined();
+    expect(zoomLabel()).toBe('100%');
+    expect(btnByText(/^fullscreen$/i)).toBeDefined();
+    // Copy source and Export stay in the view bundle: the source is already in
+    // the pane next to this one, and keeping them out is what keeps png-export
+    // out of the config bundle.
+    expect(btnByText(/copy source/i)).toBeUndefined();
+    expect(btnByText(/^export/i)).toBeUndefined();
+  });
+
+  it('zooms on ctrl+wheel and resets with 0', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      stageEl().dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: -100,
+          ctrlKey: true,
+          clientX: 5,
+          clientY: 5,
+          cancelable: true,
+        }),
+      );
+    });
+    // 1 - (-100 * 0.002) = 1.2 -> 120%.
+    expect(zoomLabel()).toBe('120%');
+
+    fireEvent.keyDown(stageEl(), { key: '0' });
+    expect(zoomLabel()).toBe('100%');
+  });
+
+  it('pans by a pointer drag', async () => {
+    await mountConfig();
+    await waitForPreview();
+    const stage = stageEl();
+
+    fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
+    expect(stage.className).toMatch(/dragging/);
+
+    fireEvent.pointerMove(stage, { clientX: 30, clientY: 20, buttons: 1 });
+    expect(panTransform()).toContain('translate(30px, 20px)');
+
+    fireEvent.pointerUp(stage, { pointerId: 1 });
+    expect(stage.className).not.toMatch(/dragging/);
+  });
+
+  // The whole point of reusing Stage: the Size preset and the full-width toggle
+  // now drive the preview through the same classes the reader's CSS reads, so
+  // the preview is the render rather than a lookalike of it.
+  it('reflects the Size preset and the full-width toggle on the stage', async () => {
+    await mountConfig();
+    await waitForPreview();
+    expect(stageEl().className).not.toMatch(/sized/);
+    expect(stageEl().className).not.toMatch(/no-shrink/);
+
+    await act(async () => {
+      fireEvent.change(selectByLabel('Size'), { target: { value: 'medium' } });
+      fireEvent.click(document.querySelector('.controls input[type="checkbox"]'));
+    });
+
+    await waitFor(() => {
+      expect(stageEl().className).toMatch(/sized/);
+      expect(stageEl().className).toMatch(/no-shrink/);
+    });
+    expect(stageEl().style.getPropertyValue('--diagram-height')).toBe('560px');
+  });
+
+  // The config modal's iframe may not carry allow="fullscreen", in which case
+  // requestFullscreen rejects. Without the fallback the maximize button would
+  // simply do nothing — the one failure mode this feature can't afford.
+  it('falls back to the CSS maximize when the host refuses fullscreen', async () => {
+    await mountConfig();
+    await waitForPreview();
+    const stage = stageEl();
+    stage.requestFullscreen = vi.fn(() => Promise.reject(new TypeError('blocked')));
+
+    await act(async () => {
+      fireEvent.click(btnByText(/^fullscreen$/i));
+    });
+    expect(stage.className).toMatch(/maximized/);
+
+    // Escape is one way out of the fallback — the browser provides none of its own.
+    await act(async () => {
+      fireEvent.keyDown(stage, { key: 'Escape' });
+    });
+    expect(stage.className).not.toMatch(/maximized/);
+  });
+
+  // The other refusal shape: no Fullscreen API at all, which is also jsdom's
+  // default, so this test deliberately assigns no requestFullscreen stub.
+  it('falls back when there is no Fullscreen API, and the Exit button leaves it', async () => {
+    await mountConfig();
+    await waitForPreview();
+    const stage = stageEl();
+    expect(stage.requestFullscreen).toBeUndefined();
+
+    await act(async () => {
+      fireEvent.click(btnByText(/^fullscreen$/i));
+    });
+    expect(stage.className).toMatch(/maximized/);
+
+    // The on-diagram Exit button is the visible way out — the toolbar is hidden
+    // while maximized, so it is the only one a mouse user can see.
+    await act(async () => {
+      fireEvent.click(btnByText(/^exit fullscreen$/i));
+    });
+    expect(stage.className).not.toMatch(/maximized/);
   });
 });
 
