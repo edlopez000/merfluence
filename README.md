@@ -94,6 +94,10 @@ The diagram is then announced as a single image named "Deploy pipeline", with yo
 out in full — the node-by-node reading is dropped, because your sentence says it better. Neither
 line renders on screen; for a visible heading use the diagram's own `title`.
 
+[ACCESSIBILITY.md](ACCESSIBILITY.md) is the full statement: where Merfluence stands against WCAG
+2.1 AA, the editor's keyboard model as well as the reader's, and the limitations that come with
+rendering someone else's diagram. A [VPAT](docs/VPAT.md) covers the same findings for procurement.
+
 ## Privacy & security
 
 The manifest is the product:

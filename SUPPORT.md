@@ -6,13 +6,14 @@ need, so requests reach the right place.
 
 ## Where to go
 
-| What you have                    | Where it goes                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------- |
-| A question, a how-to, or an idea | [GitHub Discussions](https://github.com/edlopez000/merfluence/discussions)            |
-| A bug or a feature request       | [GitHub issues](https://github.com/edlopez000/merfluence/issues/new/choose)           |
-| A support request                | [The service desk](https://lopezedward.atlassian.net/servicedesk/customer/portal/1)   |
-| A private or direct enquiry      | <support@edwardlopez.dev>                                                             |
-| **A security vulnerability**     | **[SECURITY.md](SECURITY.md)** — a private advisory, never a public or shared channel |
+| What you have                    | Where it goes                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------- |
+| A question, a how-to, or an idea | [GitHub Discussions](https://github.com/edlopez000/merfluence/discussions)                   |
+| A bug or a feature request       | [GitHub issues](https://github.com/edlopez000/merfluence/issues/new/choose)                  |
+| A support request                | [The service desk](https://lopezedward.atlassian.net/servicedesk/customer/portal/1)          |
+| An accessibility barrier         | [ACCESSIBILITY.md](ACCESSIBILITY.md) has the statement; reports to <support@edwardlopez.dev> |
+| A private or direct enquiry      | <support@edwardlopez.dev>                                                                    |
+| **A security vulnerability**     | **[SECURITY.md](SECURITY.md)** — a private advisory, never a public or shared channel        |
 
 ### Questions, how-to, and ideas → Discussions
 

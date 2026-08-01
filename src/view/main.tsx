@@ -139,7 +139,12 @@ function Toolbar({
         className="zoom-level"
         onClick={onReset}
         title="Reset view"
-        aria-label="Reset view"
+        // The visible label is the zoom level, so the accessible name has to
+        // contain it (WCAG 2.1 SC 2.5.3 Label in Name) — speech control aside,
+        // a name of "Reset view" alone is also the only place the current zoom
+        // is stated, so without this a screen-reader user never hears that
+        // pressing + did anything.
+        aria-label={`Reset view, currently ${Math.round(zoom * 100)}%`}
       >
         {Math.round(zoom * 100)}%
       </button>
