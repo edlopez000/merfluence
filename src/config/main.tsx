@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
@@ -17,6 +16,7 @@ import { buildCacheFields, CACHE_VERSION } from '../lib/cache.js';
 import { extractMermaidSource } from '../lib/mermaid-file.js';
 import { SIZE_PRESETS, heightForPreset, normalizeHeight, presetForHeight } from '../lib/sizing.js';
 import { closeConfig, enableTheme, getConfig, resolveTheme, submitConfig } from '../lib/host.js';
+import { Stage } from '../components/Stage.jsx';
 
 const DEBOUNCE_MS = 300;
 
@@ -395,14 +395,17 @@ function Panel({ initial }: { initial: InitialConfig }) {
         <div className="pane">
           <div className="pane-title">Preview</div>
           <div className="preview">
+            {/* The same Stage the reader view renders, so the preview is not a
+                lookalike of the published diagram but literally the same
+                component: pan, zoom, fit and maximize all work here, and the
+                Size / "Keep full width" settings preview exactly as they render.
+                Wrapped in .root because the toolbar and hint reveal rules key
+                off it. No toolbarExtras — copy-source and export are reader
+                actions, and the editor already has the source in the pane next
+                to it. */}
             {preview.status === 'ready' && (
-              <div
-                className={`preview-diagram${height ? ' sized' : ''}`}
-                style={
-                  height ? ({ '--diagram-height': `${height}px` } as CSSProperties) : undefined
-                }
-              >
-                <div className="preview-svg" dangerouslySetInnerHTML={{ __html: preview.svg }} />
+              <div className="root">
+                <Stage svg={preview.svg} useMaxWidth={useMaxWidth} height={height} />
               </div>
             )}
             {preview.status === 'empty' && <span>Write some Mermaid to see it here.</span>}

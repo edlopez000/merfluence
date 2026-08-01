@@ -106,13 +106,13 @@
          whatever overflows. Unset — the Natural preset — falls back to the
          natural fit rules above.
 
-         :not(:fullscreen) because the preset sizes the macro within a page
-         column, which means nothing once the stage IS the screen — it would
-         strand a Small diagram as a 320px strip. Excluding the rules entirely is
-         deliberate: fullscreen then reuses the natural rules above verbatim,
+         The :not() pair because the preset sizes the macro within a page column,
+         which means nothing once the stage IS the screen — it would strand a
+         Small diagram as a 320px strip. Excluding the rules entirely is
+         deliberate: maximized then reuses the natural rules above verbatim,
          rather than layering overrides that have to win an !important fight and
          reason about which of width/height stays definite. */
-      .stage.sized:not(:fullscreen) .pan {
+      .stage.sized:not(:fullscreen):not(.maximized) .pan {
         max-width: none;
       }
       /* !important beats the inline max-width/width Mermaid writes onto the SVG
@@ -120,7 +120,7 @@
          definite here: Mermaid emits width="100%" and no height attribute, so
          the viewBox ratio needs exactly one of the two fixed to resolve. Setting
          both to auto leaves the SVG with no size at all (a blank diagram). */
-      .stage.sized:not(:fullscreen) svg {
+      .stage.sized:not(:fullscreen):not(.maximized) svg {
         height: var(--diagram-height) !important;
         width: auto !important;
         max-width: none !important;
@@ -133,11 +133,29 @@
          (see fitView in src/lib/zoom.js); on exit it restores the inline view.
          Centring is the JS's job, not this rule's: the fit zoom and the centring
          offset are one calculation, so splitting them across CSS and JS would
-         mean measuring around whatever CSS had already done. Exit with Esc. */
-      .stage:fullscreen {
+         mean measuring around whatever CSS had already done. Exit with Esc.
+
+         .maximized is the fallback for a host that refuses real fullscreen (see
+         enterFallback in src/components/Stage.tsx) — same look, pinned with CSS.
+         It is grouped onto every :fullscreen rule rather than replacing them, so
+         a natively-fullscreen stage is styled by the pseudo-class the instant
+         the browser applies it, with no unstyled frame waiting on React to paint
+         a class. */
+      .stage:fullscreen,
+      .stage.maximized {
         background: var(--ds-surface, #fff);
         padding: 24px;
         box-sizing: border-box;
+      }
+      /* Only the fallback needs pinning; :fullscreen is already the viewport.
+         Note this pins to the *iframe's* viewport, which is why the fallback is
+         useful in the config modal (its iframe fills the modal) and never
+         reached in the reader macro (whose iframe is macro-height, and where
+         native fullscreen is granted anyway). */
+      .stage.maximized {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
       }
 
       /* The keyboard shortcuts, shown only while the macro holds keyboard focus —
@@ -168,25 +186,29 @@
       .keys-fs {
         display: none;
       }
-      .stage:fullscreen .keys-inline {
+      .stage:fullscreen .keys-inline,
+      .stage.maximized .keys-inline {
         display: none;
       }
-      .stage:fullscreen .keys-fs {
+      .stage:fullscreen .keys-fs,
+      .stage.maximized .keys-fs {
         display: inline;
       }
       .root:has(:focus-visible) .keys,
-      /* Always in fullscreen: the toolbar is hidden there, so the keys are the
+      /* Always when maximized: the toolbar is hidden there, so the keys are the
          only zoom/reset controls left — including for someone who arrived by
          mouse and so never triggered :focus-visible. */
-      .stage:fullscreen .keys {
+      .stage:fullscreen .keys,
+      .stage.maximized .keys {
         display: block;
       }
 
-      /* Exit control, only visible in fullscreen (the toolbar is hidden there). */
+      /* Exit control, only visible when maximized (the toolbar is hidden there). */
       .fs-exit {
         display: none;
       }
-      .stage:fullscreen .fs-exit {
+      .stage:fullscreen .fs-exit,
+      .stage.maximized .fs-exit {
         display: inline-flex;
         align-items: center;
         position: absolute;
@@ -210,13 +232,15 @@
       /* Layer the (often translucent) subtle-hover token as a background-image
          over the opaque background-color, rather than replacing it — otherwise
          the diagram shows through on hover. */
-      .stage:fullscreen .fs-exit:hover {
+      .stage:fullscreen .fs-exit:hover,
+      .stage.maximized .fs-exit:hover {
         background-image: linear-gradient(
           var(--ds-background-neutral-subtle-hovered, #091e420f),
           var(--ds-background-neutral-subtle-hovered, #091e420f)
         );
       }
-      .stage:fullscreen .fs-exit:focus-visible {
+      .stage:fullscreen .fs-exit:focus-visible,
+      .stage.maximized .fs-exit:focus-visible {
         outline: 2px solid var(--ds-border-focused, #388bff);
         outline-offset: 1px;
       }
