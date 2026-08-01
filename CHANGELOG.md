@@ -9,6 +9,13 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.2.1](https://github.com/edlopez000/merfluence/compare/v1.2.0...v1.2.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* name the editor's source field, and publish an accessibility statement ([#112](https://github.com/edlopez000/merfluence/issues/112)) ([7ad951e](https://github.com/edlopez000/merfluence/commit/7ad951e1a92750fcd7799c5b2c357e0dd0bdfaea))
+
 ## [1.2.0](https://github.com/edlopez000/merfluence/compare/v1.1.0...v1.2.0) (2026-08-01)
 
 
