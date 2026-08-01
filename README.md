@@ -15,6 +15,8 @@
 
 Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Forge](https://developer.atlassian.com/platform/forge/), that renders Mermaid diagrams client-side. Diagram source lives in the page, and the rendering happens in the reader's browser. The app has no backend and requests no data-access permissions, so your diagrams never leave Atlassian — or reach us.
 
+**[See it live →](https://lopezedward.atlassian.net/wiki/spaces/Merfluence/overview)** — every diagram type rendering in a real Confluence space, no login needed.
+
 ## Highlights
 
 - **Private by design** — no API scopes, no external network access, no backend. The only permission requested is inline styles, which Mermaid needs to style its SVG.
