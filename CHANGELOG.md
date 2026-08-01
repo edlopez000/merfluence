@@ -9,6 +9,13 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.2.0](https://github.com/edlopez000/merfluence/compare/v1.1.0...v1.2.0) (2026-08-01)
+
+
+### Features
+
+* add a text alternative to the rendered SVG ([#110](https://github.com/edlopez000/merfluence/issues/110)) ([96fa39a](https://github.com/edlopez000/merfluence/commit/96fa39ae133f95a78b8c62b35b32a4506f46f5be)), closes [#92](https://github.com/edlopez000/merfluence/issues/92)
+
 ## [1.1.0](https://github.com/edlopez000/merfluence/compare/v1.0.2...v1.1.0) (2026-08-01)
 
 
