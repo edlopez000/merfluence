@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent } from '@testing-library/react';
+import { act, createEvent, fireEvent } from '@testing-library/react';
 
 import { CACHE_VERSION } from '../src/lib/cache.js';
 import { resolvedVersion } from '../src/lib/mermaid-registry.js';
@@ -338,7 +338,7 @@ describe('toolbar: copy source', () => {
     expect(btnByText(/^copied$/i)).toBeTruthy();
   });
 
-  it('surfaces a blocked-clipboard failure instead of throwing', async () => {
+  it('surfaces a blocked-clipboard failure visibly, not only to screen readers', async () => {
     const writeText = vi.fn(() => Promise.reject(new Error('blocked')));
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     await mountReady();
@@ -347,7 +347,11 @@ describe('toolbar: copy source', () => {
       fireEvent.click(btnByText(/^copy source$/i));
     });
 
-    expect(root().textContent).toMatch(/clipboard is blocked/i);
+    // A sighted user just watched the button do nothing, so the message has to be
+    // on screen — it used to render into an sr-only span.
+    const status = root().querySelector('[role="status"]');
+    expect(status.textContent).toMatch(/clipboard is blocked/i);
+    expect(status.className).not.toMatch(/sr-only/);
   });
 });
 
@@ -521,5 +525,249 @@ describe('stage: pointer pan', () => {
     fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
     fireEvent.lostPointerCapture(stage, { pointerId: 1 });
     expect(stage.className).not.toMatch(/dragging/);
+  });
+});
+
+// --- Keyboard operability (WCAG 2.1 SC 2.1.1) --------------------------------
+// Without these keys the diagram is reachable only with a pointer. The zoom math
+// is zoom.ts's (tested there); what's asserted here is that each key reaches the
+// right action, and that the guards keep the rest of the keyboard working.
+
+describe('stage: keyboard', () => {
+  const panTransform = () => root().querySelector('.pan').style.transform;
+
+  it('is focusable and names its shortcuts', async () => {
+    await mountReady();
+    const stage = stageEl();
+
+    expect(stage.tabIndex).toBe(0);
+    expect(stage.getAttribute('aria-roledescription')).toBe('interactive diagram');
+    expect(stage.getAttribute('aria-label')).toMatch(/arrow keys/i);
+
+    stage.focus();
+    expect(document.activeElement).toBe(stage);
+  });
+
+  it('arrows pan the view, Shift pans further, and the page never scrolls', async () => {
+    await mountReady();
+    const stage = stageEl();
+
+    // Arrows move the view, so the pan translation moves the other way:
+    // ArrowRight reveals what is off the right edge.
+    const right = createEvent.keyDown(stage, { key: 'ArrowRight' });
+    fireEvent(stage, right);
+    expect(panTransform()).toContain('translate(-32px, 0px)');
+    // Suppressed, or the arrow would scroll the page out from under the diagram.
+    expect(right.defaultPrevented).toBe(true);
+
+    fireEvent.keyDown(stage, { key: 'ArrowDown' });
+    expect(panTransform()).toContain('translate(-32px, -32px)');
+
+    fireEvent.keyDown(stage, { key: 'ArrowLeft', shiftKey: true });
+    expect(panTransform()).toContain('translate(96px, -32px)');
+
+    fireEvent.keyDown(stage, { key: 'ArrowUp', shiftKey: true });
+    expect(panTransform()).toContain('translate(96px, 96px)');
+  });
+
+  it('+, = and - zoom by the same step as the toolbar buttons', async () => {
+    await mountReady();
+
+    fireEvent.keyDown(stageEl(), { key: '+' });
+    expect(zoomLabel()).toBe('120%');
+
+    // '=' is the unshifted key '+' sits on, so it zooms in too.
+    fireEvent.keyDown(stageEl(), { key: '=' });
+    expect(zoomLabel()).toBe('140%');
+
+    fireEvent.keyDown(stageEl(), { key: '-' });
+    expect(zoomLabel()).toBe('120%');
+  });
+
+  it('0 resets both pan and zoom', async () => {
+    await mountReady();
+    const stage = stageEl();
+
+    fireEvent.keyDown(stage, { key: 'ArrowRight' });
+    fireEvent.keyDown(stage, { key: '+' });
+    expect(zoomLabel()).toBe('120%');
+
+    fireEvent.keyDown(stage, { key: '0' });
+    expect(zoomLabel()).toBe('100%');
+    expect(panTransform()).toContain('translate(0px, 0px)');
+  });
+
+  it('0 still resets in fullscreen, where the toolbar is hidden', async () => {
+    await mountReady();
+    const stage = stageEl();
+    setFullscreen(stage);
+
+    fireEvent.keyDown(stage, { key: 'ArrowRight' });
+    // The fit runs first here, but jsdom's zero-size rects make it a no-op
+    // (fitView returns null), so the plain reset behind it is what lands.
+    fireEvent.keyDown(stage, { key: '0' });
+    expect(panTransform()).toContain('translate(0px, 0px)');
+  });
+
+  it('f toggles fullscreen', async () => {
+    await mountReady();
+    const stage = stageEl();
+    stage.requestFullscreen = vi.fn();
+
+    fireEvent.keyDown(stage, { key: 'f' });
+    expect(stage.requestFullscreen).toHaveBeenCalledTimes(1);
+
+    setFullscreen(stage);
+    fireEvent.keyDown(stage, { key: 'F' });
+    expect(document.exitFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the shortcuts, without repeating them to a screen reader', async () => {
+    await mountReady();
+    const keys = root().querySelector('.keys');
+
+    // Visibility is CSS's job (:has(:focus-visible), and which variant shows is
+    // :fullscreen's); what matters here is that the hint exists, reads correctly
+    // in each mode, and is muted for screen readers — the stage's aria-label
+    // already reads the same list.
+    expect(keys.querySelector('.keys-inline').textContent).toMatch(/pan.+zoom.+full screen/i);
+    expect(keys.querySelector('.keys-fs').textContent).toMatch(/exit full screen/i);
+    // Escape is deliberately absent: getting out with Esc is what a user expects
+    // anyway, so the chip spends its room on the keys they can't guess.
+    expect(keys.textContent).not.toMatch(/esc/i);
+    expect(stageEl().getAttribute('aria-label')).toMatch(/escape/i);
+    expect(keys.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('works from the toolbar too, which the stage handler alone never sees', async () => {
+    await mountReady();
+    const stage = stageEl();
+    stage.requestFullscreen = vi.fn();
+    const button = btnByText(/^copy source$/i);
+    button.focus();
+
+    fireEvent.keyDown(button, { key: '+' });
+    expect(zoomLabel()).toBe('120%');
+
+    fireEvent.keyDown(button, { key: '0' });
+    expect(zoomLabel()).toBe('100%');
+
+    fireEvent.keyDown(button, { key: 'f' });
+    expect(stage.requestFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape releases the diagram so it stops swallowing keys', async () => {
+    await mountReady();
+    const stage = stageEl();
+    stage.focus();
+    fireEvent.keyDown(stage, { key: 'ArrowRight' });
+    expect(panTransform()).toContain('translate(-32px, 0px)');
+
+    fireEvent.keyDown(stage, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(stage);
+  });
+
+  it('Escape leaves fullscreen to the browser rather than dropping focus', async () => {
+    await mountReady();
+    const stage = stageEl();
+    stage.focus();
+    setFullscreen(stage);
+
+    // The browser may not even deliver this keydown; either way we don't fight
+    // it. The release rides on the exit itself — see the two tests below.
+    fireEvent.keyDown(stage, { key: 'Escape' });
+    expect(document.activeElement).toBe(stage);
+  });
+
+  it('releases the keyboard when the browser exits fullscreen (one Escape, not two)', async () => {
+    await mountReady();
+    const stage = stageEl();
+    stage.focus();
+
+    setFullscreen(stage);
+    await act(async () => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    // Escape's exit: nothing of ours asked for it. Entering took focus, so
+    // without the release the diagram lands back inline still eating arrows.
+    setFullscreen(null);
+    await act(async () => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    expect(document.activeElement).not.toBe(stage);
+  });
+
+  it('keeps focus when F leaves fullscreen, so it stays a toggle', async () => {
+    await mountReady();
+    const stage = stageEl();
+    stage.requestFullscreen = vi.fn();
+    stage.focus();
+
+    setFullscreen(stage);
+    await act(async () => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    // Our own exit: F asked for it, so focus stays put and F can go back in.
+    fireEvent.keyDown(stage, { key: 'f' });
+    expect(document.exitFullscreen).toHaveBeenCalled();
+    setFullscreen(null);
+    await act(async () => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    expect(document.activeElement).toBe(stage);
+  });
+
+  it('Escape with the export menu open closes the menu and keeps focus', async () => {
+    await mountReady();
+    const exportBtn = btnByText(/^export/i);
+    fireEvent.click(exportBtn);
+    exportBtn.focus();
+    expect(root().querySelector('.export-menu')).not.toBeNull();
+
+    fireEvent.keyDown(exportBtn, { key: 'Escape' });
+    expect(root().querySelector('.export-menu')).toBeNull();
+    // One Escape, one effect: the menu closed, the user keeps their place.
+    expect(document.activeElement).toBe(exportBtn);
+  });
+
+  it('takes focus on entering fullscreen, where the toolbar is gone', async () => {
+    await mountReady();
+    const stage = stageEl();
+
+    // Entering from the toolbar button leaves focus on a button outside the
+    // fullscreen element; the keys have to land on the stage regardless.
+    btnByText(/^fullscreen$/i).focus();
+    setFullscreen(stage);
+    await act(async () => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    expect(document.activeElement).toBe(stage);
+  });
+
+  it('leaves modified chords, unhandled keys, and text controls alone', async () => {
+    await mountReady();
+    const stage = stageEl();
+
+    // A browser/OS chord is not ours to swallow.
+    const chord = createEvent.keyDown(stage, { key: 'ArrowRight', ctrlKey: true });
+    fireEvent(stage, chord);
+    expect(panTransform()).toContain('translate(0px, 0px)');
+    expect(chord.defaultPrevented).toBe(false);
+
+    // An unhandled key falls straight through — Tab must still move focus.
+    const tab = createEvent.keyDown(stage, { key: 'Tab' });
+    fireEvent(stage, tab);
+    expect(tab.defaultPrevented).toBe(false);
+
+    // A text control inside the stage owns its own arrows and digits.
+    const input = document.createElement('input');
+    stage.appendChild(input);
+    fireEvent.keyDown(input, { key: 'ArrowRight' });
+    expect(panTransform()).toContain('translate(0px, 0px)');
   });
 });

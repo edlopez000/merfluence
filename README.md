@@ -33,6 +33,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 - Automatic light/dark theming that follows Confluence
 - A per-diagram display size (Small, Medium, or Large), or the diagram's natural size
 - Pan, zoom, and fullscreen navigation, with export to SVG or PNG
+- Full keyboard operation — focus a diagram and pan, zoom, reset, or go fullscreen without a mouse
 - Copy the source from any rendered diagram
 
 ## Installation
@@ -53,6 +54,23 @@ See [Development](#development) to build and deploy your own instance.
 4. Readers see the rendered diagram with pan, zoom, fullscreen, and SVG/PNG export.
 
 ![A rendered flowchart on a Confluence page with the pan, zoom, and export toolbar](docs/images/reader-view.webp)
+
+### Keyboard
+
+Tab to a diagram — the shortcuts appear along its bottom edge — then:
+
+| Key                         | Action                                                   |
+| --------------------------- | -------------------------------------------------------- |
+| Arrow keys                  | Pan (hold <kbd>Shift</kbd> for a big step)               |
+| <kbd>+</kbd> / <kbd>-</kbd> | Zoom in / out                                            |
+| <kbd>0</kbd>                | Reset the view                                           |
+| <kbd>F</kbd>                | Toggle fullscreen                                        |
+| <kbd>Esc</kbd>              | Release the diagram (in fullscreen, one press does both) |
+
+The same keys work while a toolbar button has focus, so Tabbing to the toolbar doesn't lose them.
+<kbd>Esc</kbd> hands the keyboard back: the diagram stops acting on arrow keys until you focus it
+again. Pressing it in fullscreen leaves fullscreen _and_ releases in the same press; leaving with
+<kbd>F</kbd> instead keeps the diagram focused, so <kbd>F</kbd> takes you straight back in.
 
 ## Privacy & security
 

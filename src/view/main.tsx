@@ -16,10 +16,20 @@ type ToolbarProps = {
   source: string;
   onZoom: (delta: number) => void;
   onReset: () => void;
+  onFullscreen: () => void;
+  onKeyDown: React.KeyboardEventHandler<HTMLDivElement>;
   zoom: number;
 };
 
-function Toolbar({ stageRef, source, onZoom, onReset, zoom }: ToolbarProps) {
+function Toolbar({
+  stageRef,
+  source,
+  onZoom,
+  onReset,
+  onFullscreen,
+  onKeyDown,
+  zoom,
+}: ToolbarProps) {
   const [copied, setCopied] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -70,14 +80,19 @@ function Toolbar({ stageRef, source, onZoom, onReset, zoom }: ToolbarProps) {
     }
   };
 
-  const fullscreen = () => {
-    const target = stageRef.current;
-    if (document.fullscreenElement) document.exitFullscreen();
-    else target?.requestFullscreen?.();
-  };
+  // A failure sits over the diagram, so it clears itself. Keyed on the message,
+  // so a different failure arriving mid-display gets its own full six seconds.
+  useEffect(() => {
+    if (!failure) return;
+    const timer = setTimeout(() => setFailure(null), 6000);
+    return () => clearTimeout(timer);
+  }, [failure]);
 
   return (
-    <div className="toolbar" role="toolbar" aria-label="Diagram actions">
+    // The diagram's shortcuts are handled here too: the toolbar is a *sibling* of
+    // the stage, so a keydown on one of these buttons never bubbles through it,
+    // and Tabbing to the toolbar would otherwise silently lose every key.
+    <div className="toolbar" role="toolbar" aria-label="Diagram actions" onKeyDown={onKeyDown}>
       <button type="button" onClick={copySource}>
         {copied ? 'Copied' : 'Copy source'}
       </button>
@@ -130,13 +145,27 @@ function Toolbar({ stageRef, source, onZoom, onReset, zoom }: ToolbarProps) {
       <button type="button" onClick={() => onZoom(0.2)} aria-label="Zoom in">
         +
       </button>
-      <button type="button" onClick={fullscreen}>
+      <button type="button" onClick={onFullscreen}>
         Fullscreen
       </button>
-      {failure && <span className="sr-only">{failure}</span>}
+      {/* Visible, not sr-only: a blocked clipboard or a failed PNG export is
+          something the sighted user has to see too — they just watched a button
+          do nothing. role="status" keeps the polite announcement sr-only gave. */}
+      {failure && (
+        <span className="status" role="status">
+          {failure}
+        </span>
+      )}
     </div>
   );
 }
+
+// How far one arrow press moves the view, in client px (Shift for the coarse
+// step). Fixed rather than proportional to the zoom: the diagram scales under
+// the transform, but the stage the user is looking through does not, so a
+// constant on-screen distance is what stays predictable at every zoom level.
+const PAN_STEP = 32;
+const PAN_STEP_LARGE = 128;
 
 function Stage({
   svg,
@@ -252,6 +281,11 @@ function Stage({
   // can't read the scroll position around), and scrollIntoView scrolls the parent
   // frame back to it, which needs no scope.
   const preFullscreen = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
+  // Whether the exit we're about to see is one we asked for. The browser exits on
+  // Escape without necessarily handing us the keydown, so the key can't be the
+  // signal — but every exit of *ours* passes through toggleFullscreen or the
+  // .fs-exit button, so anything else is Escape (or the browser's own control).
+  const selfExit = useRef(false);
   useEffect(() => {
     const onFsChange = () => {
       if (document.fullscreenElement) {
@@ -264,6 +298,11 @@ function Stage({
         // so never fires the observer. If the size isn't final yet this fit is
         // wrong, and the observer corrects it when the resize lands.
         fitToStage();
+        // Entering from the toolbar button leaves focus on a button that is now
+        // outside the fullscreen element, so the keys wouldn't reach the stage.
+        // Fullscreen is also where they matter most: the toolbar is hidden there,
+        // making the keyboard the only way to zoom or reset.
+        stageRef.current?.focus();
       } else {
         if (preFullscreen.current) {
           setZoom(preFullscreen.current.zoom);
@@ -271,6 +310,20 @@ function Stage({
           preFullscreen.current = null;
         }
         stageRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
+        // An exit we didn't ask for is Escape, and Escape means "let me out" —
+        // all the way out. Entering fullscreen took focus, so without this the
+        // stage lands back inline still holding the keyboard and the user has to
+        // press Escape a second time to be released. Our own exits (F, the
+        // toolbar, the Exit button) keep focus, so F stays a real toggle.
+        //
+        // Only ever release focus we took: fullscreenchange is a document event,
+        // so it reaches every macro on the page, and blurring whatever happens to
+        // be focused would let one diagram steal the keyboard back from another.
+        const focused = document.activeElement;
+        if (!selfExit.current && stageRef.current?.contains(focused)) {
+          (focused as HTMLElement).blur();
+        }
+        selfExit.current = false;
       }
     };
     document.addEventListener('fullscreenchange', onFsChange);
@@ -334,6 +387,106 @@ function Stage({
     setDragging(false);
   };
 
+  // The three actions below are shared by the toolbar buttons and the keyboard
+  // handler, so both triggers stay one behaviour rather than two that drift.
+
+  // Zoom a step toward the middle of the visible diagram.
+  const zoomByStep = (delta: number) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    zoomTo(zoomRef.current + delta, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  };
+
+  const resetView = () => {
+    // In fullscreen the toolbar is hidden, so the 0 key is the only reset there —
+    // and an identity reset would strand the diagram at 100% in the top-left
+    // rather than the fitted, centred view fullscreen opens with. Inline, and
+    // whenever the fit can't measure, this is the plain reset that always shipped.
+    if (document.fullscreenElement === stageRef.current && fitToStage()) return;
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const toggleFullscreen = () => {
+    const target = stageRef.current;
+    if (document.fullscreenElement) {
+      selfExit.current = true; // ours, so keep focus (see the fullscreenchange handler)
+      document.exitFullscreen();
+    } else target?.requestFullscreen?.();
+  };
+
+  // Keyboard equivalents for the pointer gestures: without these the diagram is
+  // operable only with a mouse (WCAG 2.1 SC 2.1.1). No new geometry — every key
+  // routes into the same helpers the pointer and toolbar paths use.
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Leave chords to the browser and the OS: ⌘/Ctrl+arrow and friends are
+    // navigation shortcuts we have no business swallowing.
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    // A text control owns its own arrows, +/-, and 0. Nothing inside the stage is
+    // one today, but the guard is what keeps that true if something is added.
+    if ((event.target as Element).closest('input, textarea, select, [contenteditable]')) return;
+
+    // Escape hands the keyboard back. Until it does, this handler swallows the
+    // arrows, so without a release the user has no way to stop us capturing them.
+    if (event.key === 'Escape') {
+      // Fullscreen: the browser's own Escape exits it, and it may not even
+      // deliver us this keydown, so we don't fight it. The release still happens
+      // — the fullscreenchange handler blurs on any exit it didn't ask for, which
+      // is what makes a single Escape both leave fullscreen and hand back the
+      // keyboard.
+      if (document.fullscreenElement) return;
+      // One Escape, one effect: if the export menu is open, Toolbar's own Escape
+      // listener is closing it right now, so don't also drop focus out of the
+      // button the user is standing on.
+      if (stageRef.current?.parentElement?.querySelector('.export-menu')) return;
+      (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
+
+    // Arrows move the *view*, the way a map or an image viewer does, so
+    // ArrowRight reveals what's off the right edge — the pan translation
+    // therefore moves the opposite way (dragging right, by contrast, carries the
+    // content itself right). Unclamped, matching drag-pan.
+    const step = event.shiftKey ? PAN_STEP_LARGE : PAN_STEP;
+    switch (event.key) {
+      case 'ArrowLeft':
+        setPan((p) => ({ ...p, x: p.x + step }));
+        break;
+      case 'ArrowRight':
+        setPan((p) => ({ ...p, x: p.x - step }));
+        break;
+      case 'ArrowUp':
+        setPan((p) => ({ ...p, y: p.y + step }));
+        break;
+      case 'ArrowDown':
+        setPan((p) => ({ ...p, y: p.y - step }));
+        break;
+      // '=' is the unshifted key '+' lives on, so both reach zoom in.
+      case '+':
+      case '=':
+        zoomByStep(0.2);
+        break;
+      case '-':
+      case '_':
+        zoomByStep(-0.2);
+        break;
+      case '0':
+        resetView();
+        break;
+      case 'f':
+      case 'F':
+        toggleFullscreen();
+        break;
+      // Everything else — Tab, Escape, screen-reader navigation — falls through
+      // untouched, and without a preventDefault.
+      default:
+        return;
+    }
+    // Only for the keys handled above: arrows would otherwise scroll the page
+    // out from under the diagram the user is panning.
+    event.preventDefault();
+  };
+
   return (
     <>
       {/* The .stage is a fixed clipping frame in normal flow: it establishes the
@@ -347,6 +500,18 @@ function Stage({
         // rules read; the SVG scales to it, keeping its aspect ratio, and the
         // existing pan/zoom reaches anything wider than the column.
         style={height ? ({ '--diagram-height': `${height}px` } as React.CSSProperties) : undefined}
+        // Focusable so the diagram itself can be operated from the keyboard, with
+        // the keys named in the label — there's no visible affordance to read
+        // them off. role="group" rather than "application": application would
+        // hand this whole subtree's keystrokes to us and take the SVG away from
+        // a screen reader's browse mode, which we'd gain nothing by doing.
+        // (The diagram's *text alternative* is a separate concern — see #92.)
+        tabIndex={0}
+        role="group"
+        aria-roledescription="interactive diagram"
+        aria-label="Diagram. Arrow keys pan, plus and minus zoom, 0 resets the view, F toggles fullscreen, Escape releases the diagram."
+        aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight + - 0 F Escape"
+        onKeyDown={handleKeyDown}
         onPointerDown={handleDown}
         onPointerMove={handleMove}
         onPointerUp={handleUp}
@@ -364,13 +529,31 @@ function Stage({
           }}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
+        {/* The shortcuts have no visible affordance otherwise — nothing on screen
+            says the diagram takes keys at all. CSS shows this only while the
+            macro holds keyboard focus. Inside .stage so it survives into
+            fullscreen, where the toolbar is hidden and the keys are the only
+            controls left. aria-hidden: the stage's aria-label already reads the
+            same list to a screen reader, and twice is noise.
+
+            Two variants, swapped by CSS, because F reads as the way *out* once
+            you're in fullscreen. Escape is in neither: pressing it to get out of
+            something is what a user already expects, so spending a third of the
+            chip teaching it buys nothing. It stays in the aria-label. */}
+        <div className="keys" aria-hidden="true">
+          <span className="keys-inline">↑↓←→ pan · +/− zoom · 0 reset · F full screen</span>
+          <span className="keys-fs">↑↓←→ pan · +/− zoom · 0 reset · F exit full screen</span>
+        </div>
         {/* Lives inside .stage so it's part of the fullscreen element (the
             toolbar is a sibling and hidden in fullscreen). CSS shows it only
             when fullscreen. */}
         <button
           type="button"
           className="fs-exit"
-          onClick={() => document.exitFullscreen?.()}
+          onClick={() => {
+            selfExit.current = true;
+            document.exitFullscreen?.();
+          }}
           aria-label="Exit fullscreen"
         >
           Exit fullscreen
@@ -379,16 +562,10 @@ function Stage({
       <ToolbarPortal
         stageRef={stageRef}
         zoom={zoom}
-        onZoom={(delta: number) => {
-          // Zoom toward the middle of the visible diagram.
-          const rect = stageRef.current?.getBoundingClientRect();
-          if (!rect) return;
-          zoomTo(zoomRef.current + delta, rect.left + rect.width / 2, rect.top + rect.height / 2);
-        }}
-        onReset={() => {
-          setZoom(1);
-          setPan({ x: 0, y: 0 });
-        }}
+        onZoom={zoomByStep}
+        onReset={resetView}
+        onFullscreen={toggleFullscreen}
+        onKeyDown={handleKeyDown}
       />
     </>
   );
