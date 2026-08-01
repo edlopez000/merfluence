@@ -1,0 +1,6 @@
+flowchart LR
+    accTitle: Deploy pipeline
+    accDescr: A pull request is reviewed, then built, then released to production.
+    PR[Pull request] --> Review[Review]
+    Review --> Build[Build]
+    Build --> Prod[Production]

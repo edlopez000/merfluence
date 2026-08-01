@@ -40,11 +40,16 @@ export default defineConfig({
       // settings) interaction tests landed, driven through the mounted components
       // in jsdom — lifting lines ~72 -> ~95 and branches ~60 -> ~78. Ratchet up
       // as more gets covered — never down.
+      //
+      // Re-measured when the diagram text alternative (a11y-name.js) landed:
+      // the numbers had drifted well clear of the old floor, which had stopped
+      // gating anything. Now lines 95.8 / statements 90.8 / functions 91.6 /
+      // branches 82.5.
       thresholds: {
-        lines: 93,
-        statements: 87,
-        functions: 90,
-        branches: 76,
+        lines: 95,
+        statements: 90,
+        functions: 91,
+        branches: 81,
       },
     },
     projects: [

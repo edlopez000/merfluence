@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { renderDiagram, measureSvg, sanitizeSvg } from '../../src/lib/render.js';
+import { ensureAccessibleName } from '../../src/lib/a11y-name.js';
 
 /**
  * The end-to-end render, which the jsdom corpus cannot reach.
@@ -140,6 +141,78 @@ describe('the three layers compose on a real SVG (positive control)', () => {
     // Arrowheads are <marker>s referenced by edges — a real structural feature,
     // not active content.
     expect(host.querySelector('marker')).not.toBeNull();
+  });
+});
+
+describe('the rendered diagram has a text alternative (WCAG 2.1 SC 1.1.1)', () => {
+  // The acceptance test for #92, and the only place the whole chain is real:
+  // Mermaid genuinely parsing accTitle/accDescr, genuinely emitting the
+  // <title>/<desc> wiring, ensureAccessibleName genuinely reading it, and
+  // sanitizeSvg genuinely letting it through. a11y-name.test.js unit-tests the
+  // transform against markup we wrote ourselves — this proves that markup is
+  // the shape Mermaid actually produces.
+
+  /** Resolve the accessible name the way assistive tech does. */
+  function accessibleName(el) {
+    const label = el.getAttribute('aria-label');
+    if (label) return label;
+    const id = el.getAttribute('aria-labelledby');
+    return id ? el.querySelector(`#${CSS.escape(id)}`)?.textContent : null;
+  }
+
+  it('names a diagram from its accTitle and describes it from accDescr', async () => {
+    const { svg } = await renderDiagram({ source: fixtures['acc-labelled'] });
+    const el = mount(svg).querySelector('svg');
+
+    expect(accessibleName(el)).toBe('Deploy pipeline');
+    const descId = el.getAttribute('aria-describedby');
+    expect(el.querySelector(`#${CSS.escape(descId)}`).textContent).toContain('production');
+
+    // The author supplied the alternative, so the graphic is atomic.
+    expect(el.getAttribute('role')).toBe('img');
+    expect(el.getAttribute('aria-roledescription')).toBe('Flowchart diagram');
+  });
+
+  it('names an undescribed diagram after its type, keeping the text browsable', async () => {
+    const { svg } = await renderDiagram({ source: fixtures.flowchart });
+    const el = mount(svg).querySelector('svg');
+
+    expect(accessibleName(el)).toBe('Flowchart diagram');
+    // NOT role="img": with only a synthesised name, hiding every node label
+    // behind it would lose more than it gains.
+    expect(el.getAttribute('role')).toBe('graphics-document document');
+    expect(el.textContent).toContain('Rethink');
+  });
+
+  it(
+    'names every diagram type in the corpus',
+    async () => {
+      // The guarantee is unconditional, so assert it over the whole corpus rather
+      // than on one type — and derived from the glob, so a new fixture is covered
+      // the moment it lands.
+      for (const name of SUBSET) {
+        const { svg } = await renderDiagram({ source: fixtures[name] });
+        const el = mount(svg).querySelector('svg');
+        expect(accessibleName(el), `${name} has an accessible name`).toBeTruthy();
+        expect(el.getAttribute('role'), `${name} has a role`).toBeTruthy();
+      }
+    },
+    RENDER_TIMEOUT,
+  );
+
+  it('backfills a cached SVG that predates the naming code', async () => {
+    // A cache written by an older build: Mermaid's own role was stripped by the
+    // sanitizer of the day, and nothing ever named it. The view runs the same
+    // two steps on this string that renderDiagram runs on a fresh render, which
+    // is why no CACHE_VERSION bump was needed.
+    const legacy =
+      '<svg xmlns="http://www.w3.org/2000/svg" id="mmd-old-0" ' +
+      'aria-roledescription="sequence" width="100" height="50">' +
+      '<g><text>Alice</text></g></svg>';
+    const el = mount(sanitizeSvg(ensureAccessibleName(legacy))).querySelector('svg');
+
+    expect(accessibleName(el)).toBe('Sequence diagram');
+    expect(el.getAttribute('role')).toBe('graphics-document document');
   });
 });
 

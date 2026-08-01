@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify';
+import { ensureAccessibleName } from './a11y-name.js';
 import { loadMermaid, resolveMajor } from './mermaid-registry.js';
 
 /**
@@ -66,7 +67,13 @@ function baseConfig({ theme, useMaxWidth }: { theme: string; useMaxWidth: boolea
 
 const SANITIZE = {
   USE_PROFILES: { svg: true, svgFilters: true },
-  ADD_ATTR: ['transform-origin'],
+  // `role` is not in DOMPurify's *svg* attribute list — it lives in the html
+  // one, which USE_PROFILES:{svg} doesn't pull in. Without this the sanitizer
+  // silently drops the `role="graphics-document document"` Mermaid puts on
+  // every SVG root, leaving the graphic with an aria-roledescription and no
+  // role to describe (see a11y-name.js, which then can't set one either).
+  // aria-* needs no entry: DOMPurify allows it via ALLOW_ARIA_ATTR.
+  ADD_ATTR: ['transform-origin', 'role'],
 };
 
 /**
@@ -229,7 +236,10 @@ export async function renderDiagram({
   await mermaid.parse(trimmed);
 
   const { svg } = await mermaid.render(nextId(), trimmed);
-  return { svg: sanitizeSvg(svg), major: resolveMajor(versionPref) };
+  // Name the graphic before sanitizing, so DOMPurify stays the last pass over
+  // anything that reaches a reader's DOM. The cache path in the view runs the
+  // same two steps in the same order.
+  return { svg: sanitizeSvg(ensureAccessibleName(svg)), major: resolveMajor(versionPref) };
 }
 
 /** Intrinsic pixel size of a rendered SVG, for sizing the iframe. */
