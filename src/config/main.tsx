@@ -405,7 +405,13 @@ function Panel({ initial }: { initial: InitialConfig }) {
                 to it. */}
             {preview.status === 'ready' && (
               <div className="root">
-                <Stage svg={preview.svg} useMaxWidth={useMaxWidth} height={height} />
+                {/* autoFit is the one thing the preview does differently, and
+                    only because its stage differs: this one is a fixed pane,
+                    where the reader's hugs its content, so a Size preset taller
+                    than the pane would be clipped at 100% rather than simply
+                    making the macro taller. Shrink-only, so anything that fits
+                    still previews at 1:1. */}
+                <Stage svg={preview.svg} useMaxWidth={useMaxWidth} height={height} autoFit />
               </div>
             )}
             {preview.status === 'empty' && <span>Write some Mermaid to see it here.</span>}

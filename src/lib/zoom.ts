@@ -1,5 +1,6 @@
 /**
- * Interactive zoom math for the reader view.
+ * Interactive zoom math for the diagram stage, in both the reader view and the
+ * editor's live preview.
  *
  * Zooming keeps a chosen anchor point fixed on screen — the cursor for wheel
  * zoom, the stage centre for the +/- buttons — by shifting the pan translation.
@@ -106,4 +107,24 @@ export function fitView({ content, view }: { content: Rect; view: Rect }) {
       y: view.top + (view.height - content.height * zoom) / 2 - content.top,
     },
   };
+}
+
+/**
+ * fitView, but shrink-only — the fit for a diagram sitting inside a pane rather
+ * than filling the screen. Same arguments, same null contract.
+ *
+ * Two differences from fitView, both because the caller is a fixed preview pane:
+ * we never magnify (fitView scales a small diagram up to fill the screen, which
+ * is right in fullscreen and wrong in a preview), and when nothing needs
+ * shrinking we snap all the way back to identity rather than merely capping the
+ * zoom at 1. Capping alone would keep fitView's centring offset, which would
+ * move a diagram that was already where the CSS put it and leave a non-zero pan
+ * at 100%; snapping is also what makes Large -> Natural land back at 1:1 instead
+ * of stranding the diagram at the zoom the larger preset needed.
+ */
+export function shrinkToFit({ content, view }: { content: Rect; view: Rect }) {
+  const fit = fitView({ content, view });
+  if (!fit) return null;
+  if (fit.zoom >= 1) return { zoom: 1, pan: { x: 0, y: 0 } };
+  return fit;
 }

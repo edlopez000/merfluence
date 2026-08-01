@@ -50,10 +50,12 @@ const p = vi.hoisted(() => ({
 }));
 vi.mock('../src/lib/png-export.js', () => ({ download: p.download, exportPng: p.exportPng }));
 
-// jsdom implements neither observer the view relies on. Stub ResizeObserver
-// (Stage binds one) and make IntersectionObserver controllable so we can drive
-// the deferral by hand.
+// jsdom implements neither observer the view relies on. Both stubs record and
+// are driven by hand: the IntersectionObserver to run the deferral, the
+// ResizeObserver to prove what the reader does — and does not — do with a resize
+// (see the auto-fit describe at the bottom).
 let ioInstances = [];
+let roInstances = [];
 class MockIntersectionObserver {
   constructor(cb) {
     this.cb = cb;
@@ -82,10 +84,22 @@ beforeEach(() => {
   p.download.mockReset();
   p.exportPng.mockReset().mockImplementation(() => Promise.resolve());
   ioInstances = [];
+  roInstances = [];
   globalThis.ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+    constructor(cb) {
+      this.cb = cb;
+      this.targets = [];
+      roInstances.push(this);
+    }
+    observe(target) {
+      this.targets.push(target);
+    }
+    unobserve(target) {
+      this.targets = this.targets.filter((t) => t !== target);
+    }
+    disconnect() {
+      this.targets = [];
+    }
   };
   globalThis.IntersectionObserver = MockIntersectionObserver;
   // jsdom implements none of these; the Stage/Toolbar handlers call them. Stub as
@@ -822,5 +836,75 @@ describe('stage: keyboard', () => {
     stage.appendChild(input);
     fireEvent.keyDown(input, { key: 'ArrowRight' });
     expect(panTransform()).toContain('translate(0px, 0px)');
+  });
+});
+
+// --- The reader does not auto-fit ---------------------------------------------
+// Stage's autoFit is opt-in and only the editor's preview opts in. That is not a
+// preference: "Keep full width" here deliberately clips a diagram wider than the
+// column and lets the user pan to the rest (see the no-shrink rules in
+// src/view/index.html), which a shrink-to-fit would silently undo — and the
+// reader sizes its own iframe from the measured content, so fitting to that
+// content would be circular. These are the guards for that.
+describe('stage: the reader never fits inline', () => {
+  const panTransform = () => root().querySelector('.pan').style.transform;
+
+  // Give the stage a diagram far too tall for it, i.e. exactly what makes the
+  // editor's preview shrink.
+  function stubOversized() {
+    root().querySelector('.stage').getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 300,
+    });
+    root().querySelector('.pan').getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    });
+  }
+
+  it('binds no observer on the content layer at all', async () => {
+    await mountReady();
+    const pan = root().querySelector('.pan');
+    // The content observer is autoFit's trigger and is not bound without it, so
+    // this fails loudly if the prop's default is ever flipped.
+    expect(roInstances.some((o) => o.targets.includes(pan))).toBe(false);
+    expect(roInstances.some((o) => o.targets.includes(root().querySelector('.stage')))).toBe(true);
+  });
+
+  it('leaves an oversized diagram at 100% when the column resizes', async () => {
+    await mountReady();
+    stubOversized();
+
+    await act(async () => {
+      for (const o of roInstances) o.cb([], o);
+    });
+
+    expect(zoomLabel()).toBe('100%');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1)');
+  });
+
+  it('still magnifies to fill the screen when maximized', async () => {
+    await mountReady();
+    const stage = stageEl();
+    // Small enough that the two policies disagree: fullscreen scales it up 2x,
+    // where a shrink-only fit would leave it at 1:1.
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300 });
+    root().querySelector('.pan').getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 150,
+    });
+
+    setFullscreen(stage);
+    await act(async () => {
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+
+    expect(zoomLabel()).toBe('200%');
   });
 });

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-import { anchoredZoom, fitView, untransformedRect } from '../lib/zoom.js';
+import { anchoredZoom, fitView, shrinkToFit, untransformedRect } from '../lib/zoom.js';
 
 /**
  * The interactive diagram surface, shared by the reader view and the config
@@ -103,15 +103,34 @@ function StageToolbar({
 const PAN_STEP = 32;
 const PAN_STEP_LARGE = 128;
 
+// How close a computed fit has to be to the current view to count as "already
+// there". A modal drag-resize fires an observation per frame and setPan always
+// allocates a fresh object, so without this every one of them repaints.
+const ZOOM_EPSILON = 1e-4;
+const PAN_EPSILON = 0.5;
+
 export function Stage({
   svg,
   useMaxWidth,
   height,
+  autoFit = false,
   toolbarExtras,
 }: {
   svg: string;
   useMaxWidth: boolean;
   height: number | null;
+  /**
+   * Shrink an oversized diagram to fit the stage, inline. Opt-in, and only the
+   * editor's preview opts in: its stage is a fixed pane (`.preview .stage` is
+   * `flex: 1` inside an `overflow: hidden` column), so a Size preset taller than
+   * the pane is simply clipped at 100%. The reader's stage hugs its content
+   * instead, and must NOT fit — "Keep full width" there deliberately clips a
+   * wide diagram to the column and lets the user pan to the rest (see the
+   * no-shrink rules in src/view/index.html), which a shrink-fit would silently
+   * undo; the reader also sizes its iframe from the measured content, so
+   * fitting to that content would be circular.
+   */
+  autoFit?: boolean;
   toolbarExtras?: ToolbarExtras;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +148,18 @@ export function Stage({
   zoomRef.current = zoom;
   const panRef = useRef(pan);
   panRef.current = pan;
+  // Same reason: the observers below are bound once, so they'd close over the
+  // prop's first value.
+  const autoFitRef = useRef(autoFit);
+  autoFitRef.current = autoFit;
+
+  // Whether the current view is one the user set by hand (wheel, drag, +/-).
+  // Only the *viewport* observer honours it — a resized pane leaves a view the
+  // user chose alone, while a new content box supersedes it (see below).
+  const userAdjusted = useRef(false);
+  // One-shot: skip the next content observation because we caused it ourselves
+  // by leaving maximize. See exitMaximized.
+  const skipNextContentFit = useRef(false);
 
   // The CSS-pinned fallback for when the browser won't give us real fullscreen
   // (see enterFallback). State drives the class; the ref is what the once-bound
@@ -159,17 +190,22 @@ export function Stage({
       panTop: panRect.top,
     });
     if (!next) return; // at a clamp bound; nothing to do
+    // Every zoom gesture funnels through here — wheel, the toolbar +/-, the
+    // keyboard. From now on a pane resize leaves this view alone.
+    userAdjusted.current = true;
     setZoom(next.zoom);
     setPan(next.pan);
   };
 
-  // Scale the diagram to fill the screen and centre it. Mirrors zoomTo: measure
-  // live rects, hand the math to the pure helper, apply the result.
-  const fitToStage = () => {
+  // Measure the two rects a fit is computed from: the diagram's own box and the
+  // viewport it has to sit in. Mirrors zoomTo — measure live rects, hand the
+  // math to a pure helper, apply the result — with the policy (fill the screen,
+  // or shrink to the pane) left to the callers below.
+  const measure = () => {
     const stage = stageRef.current;
-    if (!stage) return false;
+    if (!stage) return null;
     const panEl = stage.querySelector('.pan');
-    if (!panEl) return false;
+    if (!panEl) return null;
 
     // .pan's rect carries whatever transform is applied right now, so invert it to
     // recover the untransformed rect fitView needs. The caller resets to identity
@@ -193,11 +229,38 @@ export function Stage({
       height: stageRect.height - inset('top') - inset('bottom'),
     };
 
-    const next = fitView({ content, view });
+    return { content, view };
+  };
+
+  // Apply a computed fit, or nothing if it's the view we're already showing.
+  // Returns whether the fit was usable at all — the no-op case counts, so a
+  // caller falling back on `false` (resetView) doesn't undo a good view. The
+  // guard is what keeps a per-frame observation stream from repainting: nothing
+  // here changes layout, so a no-op fit has to stay a no-op all the way down.
+  const applyFit = (next: { zoom: number; pan: { x: number; y: number } } | null) => {
     if (!next) return false;
+    const settled =
+      Math.abs(next.zoom - zoomRef.current) < ZOOM_EPSILON &&
+      Math.abs(next.pan.x - panRef.current.x) < PAN_EPSILON &&
+      Math.abs(next.pan.y - panRef.current.y) < PAN_EPSILON;
+    if (settled) return true;
     setZoom(next.zoom);
     setPan(next.pan);
     return true;
+  };
+
+  // Scale the diagram to fill the screen and centre it. Maximized only, where
+  // magnifying a small diagram to fill the screen is the point.
+  const fitToStage = () => {
+    const rects = measure();
+    return rects ? applyFit(fitView(rects)) : false;
+  };
+
+  // The inline counterpart: shrink an oversized diagram into the stage, never
+  // magnify, and snap back to identity the moment it fits (see shrinkToFit).
+  const fitInline = () => {
+    const rects = measure();
+    return rects ? applyFit(shrinkToFit(rects)) : false;
   };
 
   // Re-fit on every stage resize while maximized. Whether fullscreenchange fires
@@ -210,18 +273,71 @@ export function Stage({
   // so the fit inside enterMaximized always measures the pre-pin box.
   //
   // Refitting can't loop: maximized, the stage is pinned to the viewport, and
-  // .pan's transform doesn't feed back into layout. Inline, the guard skips out,
-  // so a page-column resize never disturbs a view the user set themselves.
+  // .pan's transform doesn't feed back into layout. Inline it re-fits only with
+  // autoFit on and only until the user takes over, so a page-column resize never
+  // disturbs a view they set themselves — and in the reader, which never passes
+  // autoFit, this observer still does nothing at all inline.
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     const observer = new ResizeObserver(() => {
-      if (!maximized()) return;
-      fitToStage();
+      if (maximized()) {
+        fitToStage();
+        return;
+      }
+      if (!autoFitRef.current || userAdjusted.current) return;
+      fitInline();
     });
     observer.observe(stage);
     return () => observer.disconnect();
+    // Bound once, deliberately, like the fullscreenchange listener below: the fit
+    // helpers reach the current state through refs, so closing over the first
+    // instance is correct, and listing them would rebind the observer on every
+    // pan frame for nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // autoFit's own trigger: the diagram's box changed, so the view last computed
+  // for it is stale. One rule covers every case — a new Size preset, a re-render
+  // into different source, the full-width toggle, the very first diagram to land
+  // — with no dependency list to keep in step, and no question about when the new
+  // layout is final: a ResizeObserver runs after layout and before paint, and a
+  // measurement taken too early is corrected by the next observation.
+  //
+  // It watches .pan rather than the stage because in the editor the stage is a
+  // fixed pane (flex: 1) that never resizes when the preset does — the content
+  // is the only thing that moves. And it can't feed back on itself: a fit writes
+  // a transform, transforms are paint-time and change no layout box, so the
+  // observer never sees one. That is the same asymmetry measure() has to invert
+  // for — getBoundingClientRect DOES report the transform.
+  //
+  // Not bound at all without autoFit, so the reader carries no second observer
+  // and its behaviour is unchanged by construction rather than by a guard.
+  useEffect(() => {
+    if (!autoFit) return;
+    const panEl = stageRef.current?.querySelector('.pan');
+    if (!panEl) return;
+    const observer = new ResizeObserver(() => {
+      // Maximized, the fullscreen fit owns the view. Entering is safe to ignore
+      // here — both routes set their flag before the .sized rules drop and
+      // relayout .pan — but *leaving* is not: by then maximized() is already
+      // false, and a fit would overwrite the pre-maximize view exitMaximized
+      // just restored. Hence the one-shot flag it sets.
+      if (maximized()) return;
+      if (skipNextContentFit.current) {
+        skipNextContentFit.current = false;
+        return;
+      }
+      // A new content box supersedes whatever the user had set for the old one.
+      userAdjusted.current = false;
+      fitInline();
+    });
+    observer.observe(panEl);
+    return () => observer.disconnect();
+    // Bound once per autoFit value, deliberately: the callback touches only refs
+    // and setState, so closing over the first instance is correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFit]);
 
   // Maximizing reuses the inline pan/zoom, so we snapshot the view on enter and
   // open on the whole diagram, fitted to the screen and centred, for a
@@ -265,6 +381,10 @@ export function Stage({
       setPan(preMaximize.current.pan);
       preMaximize.current = null;
     }
+    // Dropping .maximized brings the .sized rules back, which resizes .pan and
+    // so fires the content observer — after maximized() has already gone false.
+    // Left alone it would auto-fit over the view we just restored.
+    skipNextContentFit.current = true;
     stageRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
     // An exit we didn't ask for is Escape, and Escape means "let me out" —
     // all the way out. Entering took focus, so without this the stage lands
@@ -373,6 +493,7 @@ export function Stage({
       handleUp();
       return;
     }
+    userAdjusted.current = true;
     setPan({
       x: drag.current.px + (event.clientX - drag.current.x),
       y: drag.current.py + (event.clientY - drag.current.y),
@@ -406,12 +527,24 @@ export function Stage({
     zoomTo(zoomRef.current + delta, rect.left + rect.width / 2, rect.top + rect.height / 2);
   };
 
+  // Move the view by a client-px delta. Shared by the arrow keys so all four
+  // mark the view as the user's, the same as a drag does.
+  const panBy = (dx: number, dy: number) => {
+    userAdjusted.current = true;
+    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+  };
+
   const resetView = () => {
+    userAdjusted.current = false;
     // Maximized the toolbar is hidden, so the 0 key is the only reset there —
     // and an identity reset would strand the diagram at 100% in the top-left
-    // rather than the fitted, centred view maximizing opens with. Inline, and
-    // whenever the fit can't measure, this is the plain reset that always shipped.
+    // rather than the fitted, centred view maximizing opens with. Inline with
+    // autoFit, reset means the same thing the preview opens with: the fit. For
+    // a diagram that already fits that IS the identity reset (see shrinkToFit),
+    // so this only changes what happens to one that doesn't. Whenever the fit
+    // can't measure, the plain reset that always shipped is still behind it.
     if (maximized() && fitToStage()) return;
+    if (autoFit && fitInline()) return;
     setZoom(1);
     setPan({ x: 0, y: 0 });
   };
@@ -459,16 +592,16 @@ export function Stage({
     const step = event.shiftKey ? PAN_STEP_LARGE : PAN_STEP;
     switch (event.key) {
       case 'ArrowLeft':
-        setPan((p) => ({ ...p, x: p.x + step }));
+        panBy(step, 0);
         break;
       case 'ArrowRight':
-        setPan((p) => ({ ...p, x: p.x - step }));
+        panBy(-step, 0);
         break;
       case 'ArrowUp':
-        setPan((p) => ({ ...p, y: p.y + step }));
+        panBy(0, step);
         break;
       case 'ArrowDown':
-        setPan((p) => ({ ...p, y: p.y - step }));
+        panBy(0, -step);
         break;
       // '=' is the unshifted key '+' lives on, so both reach zoom in.
       case '+':
