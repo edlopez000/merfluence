@@ -58,11 +58,14 @@ function Editor({
   dark,
   onChange,
   errorLine,
+  onTabCaptured,
 }: {
   value: string;
   dark: boolean;
   onChange: (value: string) => void;
   errorLine: number | null;
+  /** Fired the first time Tab is swallowed for indentation. See the exit hint. */
+  onTabCaptured: () => void;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -83,7 +86,15 @@ function Editor({
       // SC 4.1.2). The visible "Mermaid source" pane title is a sibling div
       // rather than a <label>, so name the field here instead of reaching
       // across the component boundary with aria-labelledby.
-      EditorView.contentAttributes.of({ 'aria-label': 'Mermaid source' }),
+      // ...and describe it with the keyboard-exit hint, so the way out of the
+      // Tab trap below is announced on the way in rather than only being
+      // readable somewhere on screen (WCAG 2.1 SC 2.1.2; see the hint itself in
+      // Panel). Describing rather than labelling: the name stays "Mermaid
+      // source", and a description is what a screen reader reads after it.
+      EditorView.contentAttributes.of({
+        'aria-label': 'Mermaid source',
+        'aria-describedby': 'editor-exit-hint',
+      }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChange(update.state.doc.toString());
       }),
@@ -118,7 +129,24 @@ function Editor({
     viewRef.current?.dispatch({ effects: setErrorLine.of(errorLine) });
   }, [errorLine]);
 
-  return <div className="editor" ref={host} />;
+  return (
+    <div
+      className="editor"
+      ref={host}
+      // The other half of the SC 2.1.2 advisory, for a sighted keyboard user who
+      // never hears the field's description: the moment Tab is swallowed for
+      // indentation instead of moving focus, reveal the way out. Observed on the
+      // way past, never handled — indentWithTab in the keymap above still does
+      // the indenting, and a modified Tab is the browser's own, so it moves
+      // focus normally and reveals nothing. CodeMirror builds its DOM inside
+      // this div, so the keydown bubbles through here.
+      onKeyDown={(event) => {
+        if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          onTabCaptured();
+        }
+      }}
+    />
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -145,6 +173,9 @@ function Panel({ initial }: { initial: InitialConfig }) {
   const [height, setHeight] = useState(normalizeHeight(initial.height));
 
   const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
+  // Whether Tab has been pressed in the source editor yet, which is when the
+  // "how to get out" hint stops being noise and starts being the answer.
+  const [tabCaptured, setTabCaptured] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const dark = useMemo(() => resolveTheme(theme) === 'dark', [theme]);
@@ -380,15 +411,28 @@ function Panel({ initial }: { initial: InitialConfig }) {
             {/* Tab indents here (indentWithTab), so the way out has to be
                 stated, not merely bound: SC 2.1.2 requires the user be advised
                 of the method whenever it takes more than Tab itself. Esc-then-
-                Tab is CodeMirror's own two-second escape hatch — shorter to
-                explain than the Ctrl+M toggle, and the same on every platform. */}
-            <span className="hint"> · Tab indents; Esc then Tab moves on</span>
+                Tab is CodeMirror's own escape hatch — shorter to explain than
+                the Ctrl+M toggle, and the same on every platform.
+
+                Stated on the field rather than permanently above it, so it
+                reaches each audience when it is the answer to a question they
+                actually have. It is the editor's accessible description, so a
+                screen reader reads it on the way in; and it stays visually
+                hidden until Tab is first swallowed, which is the moment a
+                sighted keyboard user discovers they are stuck. Never removed
+                from the DOM — sr-only, not display:none — because the
+                description has to stay in the accessibility tree either way. */}
+            <span id="editor-exit-hint" className={`hint exit-hint${tabCaptured ? ' shown' : ''}`}>
+              {' '}
+              · Esc then Tab to leave the editor
+            </span>
           </div>
           <Editor
             value={source}
             dark={dark}
             onChange={setSource}
             errorLine={preview.status === 'error' ? preview.line : null}
+            onTabCaptured={() => setTabCaptured(true)}
           />
         </div>
 

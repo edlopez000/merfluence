@@ -124,6 +124,28 @@
       .pane-title .hint {
         opacity: 0.8;
       }
+      /* The way out of the source editor's Tab trap. Not shown until Tab has
+         actually been swallowed (see the exit hint in src/config/main.tsx), so
+         it answers a question the user has rather than sitting in the chrome for
+         everyone who never presses Tab. Hidden the sr-only way rather than with
+         display: none, because it is the editor's aria-describedby target and
+         has to stay in the accessibility tree the whole time — that is how a
+         screen-reader user is advised (WCAG 2.1 SC 2.1.2). */
+      .pane-title .exit-hint {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      .pane-title .exit-hint.shown {
+        position: static;
+        width: auto;
+        height: auto;
+        overflow: visible;
+        clip-path: none;
+      }
 
       .editor {
         flex: 1;
