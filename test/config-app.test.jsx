@@ -38,15 +38,74 @@ vi.mock('../src/lib/render.js', async (importActual) => {
 
 const SOURCE = 'flowchart TD\n A-->B';
 
+// Every ResizeObserver the mounted Stage binds, with what it was pointed at, so
+// a test can deliver the observation jsdom never would. Reset per test.
+let observers = [];
+
+/**
+ * Deliver one observation to whichever observer is watching `selector`. jsdom
+ * implements no ResizeObserver at all, so this is the only way to reach the
+ * auto-fit path — what it proves is the wiring and the policy, not the geometry
+ * (the rects below are fabricated). The real-layout half is in
+ * test/browser/stage-autofit.integration.test.js.
+ */
+async function fireObserver(selector) {
+  const target = document.querySelector(selector);
+  const observing = observers.filter((o) => o.targets.includes(target));
+  expect(observing.length).toBeGreaterThan(0);
+  await act(async () => {
+    for (const o of observing) o.callback([], o);
+  });
+}
+
+/**
+ * Give .stage and .pan real numbers to measure. jsdom reports every rect as
+ * 0x0, which makes fitView bail — so without this the fit is a silent no-op.
+ * getComputedStyle's padding comes back '' and measure() already reads that as
+ * 0, so only the rects need stubbing.
+ *
+ * `pan` is the diagram's *layout* size. What the stub reports is that box with
+ * the transform React has written onto .pan applied, exactly as a real
+ * getBoundingClientRect does — which is the whole reason measure() has to invert
+ * it through untransformedRect. A stub that ignored the transform would quietly
+ * test a measurement path the browser never takes.
+ */
+function stubRects({ stage, pan }) {
+  const stageEl = document.querySelector('.preview .stage');
+  const panEl = document.querySelector('.preview .pan');
+  stageEl.getBoundingClientRect = () => ({ left: 0, top: 0, ...stage });
+  panEl.getBoundingClientRect = () => {
+    const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(
+      panEl.style.transform,
+    );
+    const [x, y, z] = m ? m.slice(1).map(Number) : [0, 0, 1];
+    return { left: x, top: y, width: pan.width * z, height: pan.height * z };
+  };
+}
+
 beforeEach(() => {
   for (const key of Object.keys(h)) h[key].mockReset();
   // The preview renders the shared Stage (src/components/Stage.tsx), which binds
-  // a ResizeObserver and drives pointer capture — none of which jsdom implements.
-  // Stub as no-ops so the handlers run; their math belongs to zoom.ts's own tests.
+  // ResizeObservers and drives pointer capture — none of which jsdom implements.
+  // The observer stub records rather than no-ops, so the auto-fit tests below can
+  // fire an observation by hand; it never fires on its own, so every other test
+  // sees the old no-op behaviour.
+  observers = [];
   globalThis.ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+    constructor(callback) {
+      this.callback = callback;
+      this.targets = [];
+      observers.push(this);
+    }
+    observe(target) {
+      this.targets.push(target);
+    }
+    unobserve(target) {
+      this.targets = this.targets.filter((t) => t !== target);
+    }
+    disconnect() {
+      this.targets = [];
+    }
   };
   HTMLElement.prototype.setPointerCapture ??= () => {};
   HTMLElement.prototype.releasePointerCapture ??= () => {};
@@ -224,6 +283,150 @@ describe('interactive preview', () => {
       fireEvent.click(btnByText(/^exit fullscreen$/i));
     });
     expect(stage.className).not.toMatch(/maximized/);
+  });
+});
+
+// --- Auto-fit -----------------------------------------------------------------
+// The editor's stage is a fixed pane, so a Size preset taller than it used to be
+// clipped at 100%: nothing re-fitted inline, because every route to a fit was
+// gated on being maximized. `autoFit` (config-only) re-fits whenever the
+// diagram's own box changes. These cover the wiring and the policy against
+// fabricated rects; that the rects the browser really reports behave this way is
+// test/browser/stage-autofit.integration.test.js's job.
+describe('auto-fit in the preview', () => {
+  const stageEl = () => document.querySelector('.preview .stage');
+  const zoomLabel = () => document.querySelector('.preview .zoom-level')?.textContent;
+  const panTransform = () => document.querySelector('.preview .pan').style.transform;
+  const btnByText = (re) =>
+    [...document.querySelectorAll('.preview button')].find((b) => re.test(b.textContent.trim()));
+
+  // A 400x300 pane holding an 800px-tall diagram — i.e. the Large preset in a
+  // short pane, the case that reported the bug. 300/800 = 0.375, and the leftover
+  // width halves to 125px; the height is flush, so y stays 0.
+  const CLIPPED = { stage: { width: 400, height: 300 }, pan: { width: 400, height: 800 } };
+  const FITS = { stage: { width: 400, height: 300 }, pan: { width: 200, height: 150 } };
+
+  it('shrinks a diagram taller than the pane, and centres what is left over', async () => {
+    await mountConfig();
+    await waitForPreview();
+    stubRects(CLIPPED);
+
+    await act(async () => {
+      fireEvent.change(selectByLabel('Size'), { target: { value: 'large' } });
+    });
+    // The preset alone changes nothing — it is CSS, and it is the resulting
+    // relayout of .pan that triggers the fit.
+    await fireObserver('.preview .pan');
+
+    expect(zoomLabel()).toBe('38%');
+    expect(panTransform()).toBe('translate(125px, 0px) scale(0.375)');
+  });
+
+  it('leaves a diagram that already fits at 1:1', async () => {
+    await mountConfig();
+    await waitForPreview();
+    stubRects(FITS);
+
+    await fireObserver('.preview .pan');
+
+    // Not scaled up to fill the pane the way maximizing does, and not nudged off
+    // where the CSS put it either.
+    expect(zoomLabel()).toBe('100%');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1)');
+  });
+
+  it('keeps a zoom the user set through a pane resize, but not through a new diagram', async () => {
+    await mountConfig();
+    await waitForPreview();
+    stubRects(CLIPPED);
+
+    await act(async () => {
+      stageEl().dispatchEvent(
+        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
+      );
+    });
+    expect(zoomLabel()).toBe('120%');
+
+    // The pane resizing is not a reason to throw away a view they chose...
+    await fireObserver('.preview .stage');
+    expect(zoomLabel()).toBe('120%');
+
+    // ...but the diagram's own box changing is: the old view was computed for a
+    // box that no longer exists.
+    await fireObserver('.preview .pan');
+    expect(zoomLabel()).toBe('38%');
+  });
+
+  it('re-fits when the pane itself grows, as long as the view is still ours', async () => {
+    await mountConfig();
+    await waitForPreview();
+    stubRects(CLIPPED);
+    await fireObserver('.preview .pan');
+    expect(zoomLabel()).toBe('38%');
+
+    // The modal is resized, or the 720px breakpoint drops the panes into one
+    // column: the diagram hasn't changed, but the room for it has.
+    stubRects({ stage: { width: 400, height: 600 }, pan: { width: 400, height: 800 } });
+    await fireObserver('.preview .stage');
+
+    expect(zoomLabel()).toBe('75%');
+    expect(panTransform()).toBe('translate(50px, 0px) scale(0.75)');
+  });
+
+  it('resets to the fit rather than to 100%', async () => {
+    await mountConfig();
+    await waitForPreview();
+    stubRects(CLIPPED);
+    await fireObserver('.preview .pan');
+    expect(zoomLabel()).toBe('38%');
+
+    await act(async () => {
+      stageEl().dispatchEvent(
+        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
+      );
+    });
+    fireEvent.keyDown(stageEl(), { key: '0' });
+
+    // 100% here would put the user straight back into the clipped view this
+    // whole feature exists to remove.
+    expect(zoomLabel()).toBe('38%');
+  });
+
+  it('leaves the maximized fit alone, in and out', async () => {
+    await mountConfig();
+    await waitForPreview();
+    // A diagram small enough that the two policies disagree loudly: maximizing
+    // magnifies it to 200%, auto-fit would snap it back to 100%.
+    stubRects(FITS);
+
+    await act(async () => {
+      stageEl().dispatchEvent(
+        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
+      );
+    });
+    expect(zoomLabel()).toBe('120%');
+
+    // No Fullscreen API in jsdom, so this takes the CSS fallback — the path the
+    // Forge config modal actually takes.
+    await act(async () => {
+      fireEvent.click(btnByText(/^fullscreen$/i));
+    });
+    expect(zoomLabel()).toBe('200%');
+
+    // Dropping the .sized rules on enter resizes .pan, which must not hand the
+    // view to auto-fit while maximized.
+    await fireObserver('.preview .pan');
+    expect(zoomLabel()).toBe('200%');
+
+    await act(async () => {
+      fireEvent.keyDown(stageEl(), { key: 'Escape' });
+    });
+    expect(zoomLabel()).toBe('120%');
+
+    // And the relayout on the way back out — which arrives after maximized() has
+    // already gone false — must not overwrite the restored view either.
+    await fireObserver('.preview .pan');
+    expect(zoomLabel()).toBe('120%');
   });
 });
 

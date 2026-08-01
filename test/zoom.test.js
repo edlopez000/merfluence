@@ -5,6 +5,7 @@ import {
   clampZoom,
   anchoredZoom,
   fitView,
+  shrinkToFit,
   untransformedRect,
 } from '../src/lib/zoom.js';
 
@@ -191,5 +192,57 @@ describe('fitView', () => {
     const fillsX = Math.abs(box.width - view.width) < 0.001;
     const fillsY = Math.abs(box.height - view.height) < 0.001;
     expect(fillsX || fillsY).toBe(true);
+  });
+});
+
+// The editor preview's policy. It lives here rather than in the component
+// because it is a decision, not a mechanism: the component only asks "which of
+// the two fits applies", and everything that could be wrong about the answer —
+// magnifying when it shouldn't, drifting off 1:1 when nothing needs shrinking —
+// is visible from the rects alone.
+describe('shrinkToFit', () => {
+  const view = { left: 24, top: 24, width: 952, height: 552 };
+
+  it('never magnifies: a diagram that fits stays at 1:1, exactly where it is', () => {
+    // The same content fitView scales up to 3.68x (see its suite above).
+    const content = { left: 400, top: 24, width: 200, height: 150 };
+    expect(fitView({ content, view }).zoom).toBeCloseTo(552 / 150);
+    // Not merely capped at 1 — pan snaps back to the origin too. A capped fit
+    // would keep fitView's centring offset and shift a diagram the CSS had
+    // already placed, which is what makes Large -> Natural land back at 1:1.
+    expect(shrinkToFit({ content, view })).toEqual({ zoom: 1, pan: { x: 0, y: 0 } });
+  });
+
+  it('defers to fitView exactly when the content really is too big', () => {
+    const content = { left: 24, top: 24, width: 300, height: 1500 };
+    expect(shrinkToFit({ content, view })).toEqual(fitView({ content, view }));
+    expect(shrinkToFit({ content, view }).zoom).toBeCloseTo(552 / 1500);
+  });
+
+  it('treats content that exactly fills the view as fitting', () => {
+    const content = { left: view.left, top: view.top, width: view.width, height: view.height };
+    expect(shrinkToFit({ content, view })).toEqual({ zoom: 1, pan: { x: 0, y: 0 } });
+  });
+
+  it('still stops at MIN_ZOOM for a diagram too large to ever fit', () => {
+    // The floor is fitView's, and wrapping it must not lose it: below MIN_ZOOM
+    // the preview gives up on showing the whole thing and you pan to the rest.
+    const content = { left: 24, top: 24, width: 40000, height: 300 };
+    expect(shrinkToFit({ content, view }).zoom).toBe(MIN_ZOOM);
+  });
+
+  it('returns null for a degenerate rect', () => {
+    const content = { left: 0, top: 0, width: 200, height: 150 };
+    expect(shrinkToFit({ content: { ...content, width: 0 }, view })).toBeNull();
+    expect(shrinkToFit({ content, view: { ...view, height: NaN } })).toBeNull();
+  });
+
+  it('never returns a zoom above 1, whatever the content (invariant)', () => {
+    for (const width of [1, 50, 200, 951, 952, 953, 5000, 40000]) {
+      for (const height of [1, 50, 150, 551, 552, 553, 5000]) {
+        const r = shrinkToFit({ content: { left: 24, top: 24, width, height }, view });
+        expect(r.zoom).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });
