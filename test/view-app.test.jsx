@@ -441,6 +441,16 @@ describe('toolbar: zoom controls', () => {
     fireEvent.click(btnByLabel(/reset view/i));
     expect(zoomLabel()).toBe('100%');
   });
+
+  // The visible label is the level, so the name must carry it (SC 2.5.3), and
+  // it is the only announcement a screen-reader user gets that zoom moved.
+  it('names the reset control with the current zoom level', async () => {
+    await mountReady();
+    expect(btnByLabel(/reset view/i).getAttribute('aria-label')).toBe('Reset view, currently 100%');
+
+    fireEvent.click(btnByLabel(/zoom in/i));
+    expect(btnByLabel(/reset view/i).getAttribute('aria-label')).toBe('Reset view, currently 120%');
+  });
 });
 
 describe('toolbar: fullscreen', () => {

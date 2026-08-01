@@ -246,6 +246,27 @@ describe('error gutter', () => {
   });
 });
 
+describe('editor accessibility', () => {
+  it('names the source field, which CodeMirror leaves an unlabelled textbox', async () => {
+    await mountConfig();
+
+    const content = document.querySelector('.cm-content');
+    expect(content?.getAttribute('role')).toBe('textbox');
+    expect(content?.getAttribute('aria-label')).toBe('Mermaid source');
+  });
+
+  // Tab is captured for indentation, so SC 2.1.2 wants the escape hatch stated,
+  // not merely bound.
+  it('tells the user how to move focus out of the editor', async () => {
+    await mountConfig();
+
+    const title = [...document.querySelectorAll('.pane-title')].find((el) =>
+      /mermaid source/i.test(el.textContent),
+    );
+    expect(title.textContent).toMatch(/Esc then Tab/);
+  });
+});
+
 describe('template picker', () => {
   it('loads the chosen template source and re-previews it', async () => {
     await mountConfig();

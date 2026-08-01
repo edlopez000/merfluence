@@ -78,6 +78,12 @@ function Editor({
       errorLineField,
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       EditorView.lineWrapping,
+      // CodeMirror renders its content as role="textbox" with no accessible
+      // name, so a screen reader announces an unlabelled edit field (WCAG 2.1
+      // SC 4.1.2). The visible "Mermaid source" pane title is a sibling div
+      // rather than a <label>, so name the field here instead of reaching
+      // across the component boundary with aria-labelledby.
+      EditorView.contentAttributes.of({ 'aria-label': 'Mermaid source' }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChange(update.state.doc.toString());
       }),
@@ -371,6 +377,12 @@ function Panel({ initial }: { initial: InitialConfig }) {
           <div className="pane-title">
             Mermaid source
             <span className="hint"> · or drop a .mmd / .md file</span>
+            {/* Tab indents here (indentWithTab), so the way out has to be
+                stated, not merely bound: SC 2.1.2 requires the user be advised
+                of the method whenever it takes more than Tab itself. Esc-then-
+                Tab is CodeMirror's own two-second escape hatch — shorter to
+                explain than the Ctrl+M toggle, and the same on every platform. */}
+            <span className="hint"> · Tab indents; Esc then Tab moves on</span>
           </div>
           <Editor
             value={source}
