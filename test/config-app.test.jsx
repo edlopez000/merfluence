@@ -50,9 +50,18 @@ let observers = [];
  * test/browser/stage-autofit.integration.test.js.
  */
 async function fireObserver(selector) {
-  const target = document.querySelector(selector);
-  const observing = observers.filter((o) => o.targets.includes(target));
-  expect(observing.length).toBeGreaterThan(0);
+  // Wait for the observer rather than assuming one is already bound. The element
+  // being in the DOM does not mean the effect that observes it has run: React
+  // commits the DOM first and flushes passive effects on a later task, so on a
+  // slow machine the two can be a tick apart. waitFor retries inside act, which
+  // is what lets that tick happen. (This is a test-harness fact, not a product
+  // one — nothing here waits on a real ResizeObserver.)
+  let observing = [];
+  await waitFor(() => {
+    const target = document.querySelector(selector);
+    observing = observers.filter((o) => o.targets.includes(target));
+    expect(observing.length).toBeGreaterThan(0);
+  });
   await act(async () => {
     for (const o of observing) o.callback([], o);
   });
@@ -70,9 +79,16 @@ async function fireObserver(selector) {
  * it through untransformedRect. A stub that ignored the transform would quietly
  * test a measurement path the browser never takes.
  */
-function stubRects({ stage, pan }) {
-  const stageEl = document.querySelector('.preview .stage');
-  const panEl = document.querySelector('.preview .pan');
+async function stubRects({ stage, pan }) {
+  // Same reason fireObserver waits: the stage is mounted a tick after the
+  // preview is reported ready, so reaching for it synchronously is a race.
+  let stageEl;
+  let panEl;
+  await waitFor(() => {
+    stageEl = document.querySelector('.preview .stage');
+    panEl = document.querySelector('.preview .pan');
+    expect(panEl).not.toBeNull();
+  });
   stageEl.getBoundingClientRect = () => ({ left: 0, top: 0, ...stage });
   panEl.getBoundingClientRect = () => {
     const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(
@@ -309,7 +325,7 @@ describe('auto-fit in the preview', () => {
   it('shrinks a diagram taller than the pane, and centres what is left over', async () => {
     await mountConfig();
     await waitForPreview();
-    stubRects(CLIPPED);
+    await stubRects(CLIPPED);
 
     await act(async () => {
       fireEvent.change(selectByLabel('Size'), { target: { value: 'large' } });
@@ -325,7 +341,7 @@ describe('auto-fit in the preview', () => {
   it('leaves a diagram that already fits at 1:1', async () => {
     await mountConfig();
     await waitForPreview();
-    stubRects(FITS);
+    await stubRects(FITS);
 
     await fireObserver('.preview .pan');
 
@@ -338,7 +354,7 @@ describe('auto-fit in the preview', () => {
   it('keeps a zoom the user set through a pane resize, but not through a new diagram', async () => {
     await mountConfig();
     await waitForPreview();
-    stubRects(CLIPPED);
+    await stubRects(CLIPPED);
 
     await act(async () => {
       stageEl().dispatchEvent(
@@ -360,13 +376,13 @@ describe('auto-fit in the preview', () => {
   it('re-fits when the pane itself grows, as long as the view is still ours', async () => {
     await mountConfig();
     await waitForPreview();
-    stubRects(CLIPPED);
+    await stubRects(CLIPPED);
     await fireObserver('.preview .pan');
     expect(zoomLabel()).toBe('38%');
 
     // The modal is resized, or the 720px breakpoint drops the panes into one
     // column: the diagram hasn't changed, but the room for it has.
-    stubRects({ stage: { width: 400, height: 600 }, pan: { width: 400, height: 800 } });
+    await stubRects({ stage: { width: 400, height: 600 }, pan: { width: 400, height: 800 } });
     await fireObserver('.preview .stage');
 
     expect(zoomLabel()).toBe('75%');
@@ -376,7 +392,7 @@ describe('auto-fit in the preview', () => {
   it('resets to the fit rather than to 100%', async () => {
     await mountConfig();
     await waitForPreview();
-    stubRects(CLIPPED);
+    await stubRects(CLIPPED);
     await fireObserver('.preview .pan');
     expect(zoomLabel()).toBe('38%');
 
@@ -397,7 +413,7 @@ describe('auto-fit in the preview', () => {
     await waitForPreview();
     // A diagram small enough that the two policies disagree loudly: maximizing
     // magnifies it to 200%, auto-fit would snap it back to 100%.
-    stubRects(FITS);
+    await stubRects(FITS);
 
     await act(async () => {
       stageEl().dispatchEvent(
