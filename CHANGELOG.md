@@ -9,6 +9,13 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.2.2](https://github.com/edlopez000/merfluence/compare/v1.2.1...v1.2.2) (2026-08-01)
+
+
+### Bug Fixes
+
+* extend the egress guard to &lt;style&gt; element text ([#114](https://github.com/edlopez000/merfluence/issues/114)) ([87f67bd](https://github.com/edlopez000/merfluence/commit/87f67bd3ac41a08334d148c1eca766f056323971))
+
 ## [1.2.1](https://github.com/edlopez000/merfluence/compare/v1.2.0...v1.2.1) (2026-08-01)
 
 
