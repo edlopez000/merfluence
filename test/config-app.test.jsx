@@ -615,14 +615,41 @@ describe('editor accessibility', () => {
   });
 
   // Tab is captured for indentation, so SC 2.1.2 wants the escape hatch stated,
-  // not merely bound.
-  it('tells the user how to move focus out of the editor', async () => {
+  // not merely bound. It is stated on the field rather than permanently above
+  // it, in two halves: the accessible description carries it to a screen reader
+  // on the way in, and pressing Tab reveals the same words to a sighted keyboard
+  // user at the moment they discover they are stuck.
+  it('describes the way out of the editor for assistive tech, from the start', async () => {
     await mountConfig();
 
-    const title = [...document.querySelectorAll('.pane-title')].find((el) =>
-      /mermaid source/i.test(el.textContent),
-    );
-    expect(title.textContent).toMatch(/Esc then Tab/);
+    const content = document.querySelector('.cm-content');
+    const hint = document.getElementById(content.getAttribute('aria-describedby'));
+    expect(hint).not.toBeNull();
+    expect(hint.textContent).toMatch(/Esc then Tab/);
+    expect(hint.closest('.pane-title')).not.toBeNull();
+    // In the accessibility tree from the first paint, so it is only ever hidden
+    // the sr-only way — never display:none, and never removed.
+    expect(hint.className).toMatch(/exit-hint/);
+    expect(hint.className).not.toMatch(/shown/);
+  });
+
+  it('shows it on screen once Tab is swallowed, and not before', async () => {
+    await mountConfig();
+    const hint = () => document.getElementById('editor-exit-hint');
+    const content = document.querySelector('.cm-content');
+
+    // Typing is not a reason to explain Tab.
+    fireEvent.keyDown(content, { key: 'a' });
+    expect(hint().className).not.toMatch(/shown/);
+
+    // Nor is a chord: a modified Tab is the browser's, and moves focus normally.
+    fireEvent.keyDown(content, { key: 'Tab', ctrlKey: true });
+    expect(hint().className).not.toMatch(/shown/);
+
+    await act(async () => {
+      fireEvent.keyDown(content, { key: 'Tab' });
+    });
+    expect(hint().className).toMatch(/shown/);
   });
 });
 
