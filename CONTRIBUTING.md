@@ -3,7 +3,9 @@
 Thanks for helping out. This file covers **commit conventions and the release
 process**. For the architecture and the constraints that define the app (the
 zero-scope manifest, client-side rendering, the layered sanitization), read
-[CLAUDE.md](CLAUDE.md). For rollback and incident procedure, read
+[CLAUDE.md](CLAUDE.md) and the per-area notes in [.claude/rules/](.claude/rules/)
+— they are written for coding agents but they are the accurate account of why
+each constraint exists. For rollback and incident procedure, read
 [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). If you
