@@ -57,3 +57,8 @@ Thumbs.db
 
 
 /.forge/
+
+# Claude Code — personal, per-machine instructions and settings. The shared
+# .claude/settings.json, .claude/rules/, and .claude/hooks/ stay tracked.
+CLAUDE.local.md
+.claude/settings.local.json

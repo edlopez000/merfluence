@@ -3,6 +3,12 @@
 Merfluence is a free, open-source **Confluence Cloud macro** (Atlassian Forge,
 **Custom UI**) that renders **Mermaid** diagrams entirely in the browser.
 
+<!--
+Maintainer note: this file loads into every session, so keep it short and keep
+it true. Detail that only matters when touching one area belongs in
+.claude/rules/*.md, which load on demand via `paths:` frontmatter.
+-->
+
 ## The invariant that defines this app
 
 The manifest requests **no `scopes`, no `external`, no `function`/resolver**.
@@ -13,113 +19,65 @@ no-backend posture **IS the product**.
 > Never add a scope, an egress permission, or a resolver to solve a problem.
 > If a task seems to need one, **stop and tell the user.**
 
+Two layers enforce this, so it is not just prose: the `PreToolUse` hook in
+[.claude/hooks/guard-manifest.sh](.claude/hooks/guard-manifest.sh) blocks the
+edit as you write it, and [test/manifest.test.js](test/manifest.test.js) fails
+the build if one lands anyway.
+
 ## Where the code lives
 
 ```
 manifest.yml              Forge descriptor — the security claim lives here
 src/lib/
-  mermaid-registry.js     Lazy per-major loading + version pinning
-  render.js               init + parse + render + sanitize
-  host.js                 @forge/bridge wrappers, theme resolution
-  templates.js            Starter diagrams for the type dropdown
-  cache.js                Rendered-SVG cache stored in macro config
-  mermaid-file.js         Extract Mermaid from dropped .mmd / .md files
-  sizing.js               Diagram height presets (Natural/S/M/L)
-  zoom.js                 Cursor/centre-anchored zoom math
-src/view/                 Reader view (main.jsx, index.html)
+  mermaid-registry.ts     Lazy per-major loading + version pinning
+  render.ts               init + parse + render + sanitize + egress hook
+  host.ts                 @forge/bridge wrappers, theme resolution
+  templates.ts            Starter diagrams for the type dropdown
+  cache.ts                Rendered-SVG cache stored in macro config
+  mermaid-file.ts         Extract Mermaid from dropped .mmd / .md files
+  sizing.ts               Diagram height presets (Natural/S/M/L)
+  zoom.ts                 Cursor/centre-anchored zoom math
+  a11y-name.ts            Accessible name derived from diagram source
+  png-export.ts           SVG → PNG export (canvas, no network)
+src/components/Stage.tsx  Shared pan/zoom/fit surface for both views
+src/view/main.tsx         Reader view
 src/config/               Editor: CodeMirror, live preview, error gutter;
-                          mermaid-lang.js (CodeMirror StreamLanguage for Mermaid)
+                          mermaid-lang.ts (CodeMirror StreamLanguage for Mermaid)
 test/                     Unit suite (jsdom) + parse corpus (test/fixtures/*.mmd)
 test/browser/             Real-Chromium suite: full render pipeline + XSS E2E
 ```
 
-Build: two Vite bundles → `static/{view,config}/dist`. Test: `vitest run` runs
-two projects — the jsdom unit suite (including `test/parse.test.js`, which runs
-the fixture corpus through `mermaid.parse()` on both majors) and a Playwright
-Chromium suite that exercises the real render pipeline and drives XSS payloads
-end-to-end. `npm run test:coverage` enforces the v8 coverage thresholds in CI.
+## Commands
+
+- `npm run build` — two Vite bundles → `static/{view,config}/dist`.
+- `npm test` — both vitest projects; `npm run test:coverage` adds the CI gate.
+- `npm run typecheck`, `npm run lint`, `npm run format:check`.
+- `forge lint` — validates `manifest.yml`.
+
+**After each numbered task, run `npm test`, `npm run build`, `npm run typecheck`,
+`npm run lint`, and `forge lint`; report the results.**
 
 ## Hard constraints (keep true in every change)
 
 - Rendering stays **client-side**; diagram source lives only in macro config.
-- Keep `securityLevel: 'strict'`, `htmlLabels: false`, and **DOMPurify** on all
-  rendered SVG — all three, always. They work in depth, not side by side: the
-  two Mermaid settings shape what reaches the sanitizer, and DOMPurify enforces
-  the result. So removing either Mermaid setting is not "losing one of three
-  equal layers" — it widens what the sanitizer alone has to hold, and the
-  sanitizer is the only layer that enforces. Also keep the egress hook in
-  `render.js` that strips external `href` / `url()` refs; it defends the
-  zero-egress claim, which is a separate property from script execution.
-- The suite in `test/` must stay green — parse corpus, unit projects, and the
+- Keep `securityLevel: 'strict'`, `htmlLabels: false`, **DOMPurify** on all
+  rendered SVG, and the egress hook in `render.ts` — all four, always. See
+  [.claude/rules/rendering.md](.claude/rules/rendering.md) for why they are not
+  interchangeable.
+- The suite in `test/` must stay green — parse corpus, unit project, and the
   browser XSS E2E alike. **New diagram type → new fixture.**
-- Don't break the version-pinning registry (`src/lib/mermaid-registry.js`).
+- Don't break the version-pinning registry (`src/lib/mermaid-registry.ts`).
 
 ## Working style
 
-- **When pulling in new work (a GitHub issue, a feature, any fresh task), start
-  by cutting a feature branch off `main`** — never commit new work straight to
-  `main`. Prefix the branch with a Conventional Commit **type** so the eventual
-  PR title / squash-commit subject passes commitlint (`commitlint.config.js`,
-  and the PR-title CI job): `feat/…`, `fix/…`, `build/…`, `chore/…`, `docs/…`,
-  `ci/…`, etc. Pick the type deliberately — release-please only cuts a release
-  on `feat` (minor) and `fix` (patch); everything else is non-releasing. Tooling
-  / build-metadata work (e.g. narrowing `engines.node`) is `build:`, **not**
-  `fix:`, so it doesn't trigger a spurious release. Example:
-  `build/38-narrow-engines-node`.
+- **Start new work on a fresh branch off `main`** — never commit new work
+  straight to `main`. Prefix the branch with a Conventional Commit **type** so
+  the PR title / squash subject passes commitlint and the PR-title CI job:
+  `feat/…`, `fix/…`, `build/…`, `chore/…`, `docs/…`, `ci/…`. Pick the type
+  deliberately: release-please cuts a release only on `feat` (minor) and `fix`
+  (patch). Tooling / build-metadata work (e.g. narrowing `engines.node`) is
+  `build:`, **not** `fix:`. Example: `build/38-narrow-engines-node`.
 - Before any large edit, give a short plan and the files to be touched. **Wait
   for go-ahead on anything that changes the config schema.**
-- After each numbered task: run `npm test`, `npm run build`, and `forge lint`;
-  report results.
 - Comments explain _why_, matching existing style. Don't reformat files not
   being changed.
-
-## Roadmap (in order)
-
-**0. Verify the Forge surface.** **Done** (`src/lib/host.js`). Findings against
-`@forge/bridge` 4.5.3: `view.resize()` is not a guaranteed surface, so it is
-called defensively with CSS as the fallback; colour mode comes from the typed
-`getContext().theme.colorMode`, with `view.theme.enable()` applying the `--ds-*`
-tokens and keeping `data-color-mode` on the iframe root (observed only as a
-re-render trigger); config saves go through `view.submit({ config: fields })` —
-the wrapper is required (see task 1).
-
-**1. Cache rendered SVG in macro config.** On save, persist
-`{ svgLight, svgDark, renderedVersion }` into config alongside `source`,
-`mermaidVersion`, `theme`, `useMaxWidth`. Gate on
-size: only cache if each string is < ~45KB (dropped otherwise so the save still
-succeeds). Reader view injects cached SVG (re-sanitized) for the resolved theme
-and loads **zero Mermaid** on a hit. **Done** (`src/lib/cache.js`). The cache is
-versioned via `cacheV`, now at `CACHE_VERSION = 3` (v1 caches stored a
-dark-themed SVG in `svgLight` — a theme race at save time; v2 caches carried no
-`renderedVersion`, so the reader's version label fell back to the _current_
-bundle's semver and misreported cached renders — both are discarded).
-Note: the save failure seen during testing was a missing `{ config: ... }` wrapper
-in `view.submit` (fixed in `src/lib/host.js`), not config size.
-
-**2. Lazy render on cache miss.** **Done** (`src/view/main.jsx`): the render
-trigger is wrapped in an `IntersectionObserver`, so Mermaid loads only when the
-macro scrolls into view. The originally-planned write-back of the rendered SVG
-into config was **deliberately dropped**: the reader view has no scope-free way
-to persist config (it would need a resolver or a scope, which the invariant
-forbids), so the cache is populated only by saving in the editor, and an
-uncached diagram renders fresh on every view.
-
-**3. Split mermaid.core from diagram types.** **Done**
-(`src/lib/mermaid-registry.js`): both majors resolve their `.` entry to the
-`mermaid.core` build, which already registers every diagram type and layout
-engine as a lazy dynamic import — so no manual `registerExternalDiagrams` /
-`registerLayoutLoaders` call is needed (re-registering would risk
-double-loading). A flowchart page pulls ~850KB and defers ~2.3MB of
-cytoscape/KaTeX/elkjs until a diagram needs them.
-
-**4. Confirm asset caching.** **Done**: the Vite build emits content-hashed
-filenames (see `static/{view,config}/dist/assets/`), so the same Mermaid chunk
-is served once across iframes and reloads. The README's immutable-cache note
-stands on that.
-
-## Note on AGENTS.md
-
-The repo's `AGENTS.md` is a generic Forge-assistant persona that assumes
-**UI Kit** apps (`@forge/react` only, no Custom UI, `forge create`). Merfluence
-is deliberately **Custom UI** (React + Vite + Mermaid + CodeMirror). Where the
-two conflict, **this file and the user's brief win.**
