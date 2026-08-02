@@ -20,9 +20,14 @@ export function extractMermaidSource(
   filename = '',
 ): { source: string } | { error: string } {
   const fence = String(text ?? '').match(/```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)```/i);
-  if (fence) return { source: fence[1].replace(/\s+$/, '') };
+  // trimEnd(), not replace(/\s+$/, ''): the regex form backtracks quadratically on a
+  // long whitespace run that does NOT reach the end of the string — 200KB of spaces
+  // followed by one other character took ~68s here, freezing the editor iframe on a
+  // file the author merely dropped. trimEnd() strips the identical character set
+  // (JS \s and the spec's WhiteSpace + LineTerminator are the same set) in linear time.
+  if (fence) return { source: fence[1].trimEnd() };
   if (/\.(md|markdown)$/i.test(filename)) {
     return { error: 'No ```mermaid code block found in that markdown file.' };
   }
-  return { source: String(text ?? '').replace(/\s+$/, '') };
+  return { source: String(text ?? '').trimEnd() };
 }
