@@ -14,6 +14,7 @@ import { resolvedVersion, VERSION_OPTIONS } from '../lib/mermaid-registry.js';
 import { TEMPLATES, DEFAULT_SOURCE } from '../lib/templates.js';
 import { buildCacheFields, CACHE_VERSION } from '../lib/cache.js';
 import { extractMermaidSource } from '../lib/mermaid-file.js';
+import { decodeLiveUrl, isMermaidLiveUrl, LiveUrlError } from '../lib/live-url.js';
 import { SIZE_PRESETS, heightForPreset, normalizeHeight, presetForHeight } from '../lib/sizing.js';
 import { closeConfig, enableTheme, getConfig, resolveTheme, submitConfig } from '../lib/host.js';
 import { Stage } from '../components/Stage.jsx';
@@ -59,6 +60,7 @@ function Editor({
   onChange,
   errorLine,
   onTabCaptured,
+  onLiveUrl,
 }: {
   value: string;
   dark: boolean;
@@ -66,6 +68,12 @@ function Editor({
   errorLine: number | null;
   /** Fired the first time Tab is swallowed for indentation. See the exit hint. */
   onTabCaptured: () => void;
+  /**
+   * Import a Mermaid Live Editor URL that was pasted into the editor: decode it
+   * into the source, or surface the failure. Callers decide whether the text is
+   * one (isMermaidLiveUrl) before handing it over.
+   */
+  onLiveUrl: (text: string) => Promise<void>;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -129,6 +137,30 @@ function Editor({
     viewRef.current?.dispatch({ effects: setErrorLine.of(errorLine) });
   }, [errorLine]);
 
+  // Intercept pasted Mermaid Live Editor URLs BEFORE CodeMirror (or the
+  // browser) can insert them as editor text. The listener is on this wrapper
+  // div in the CAPTURE phase, which runs before any bubble-phase handler on
+  // the .cm-content inside it — so both CodeMirror's own paste handling and
+  // the browser's native paste are preempted, and the URL never lands in the
+  // doc. Only mermaid.live fragments are intercepted; anything else pastes
+  // normally. Decoding is async (DecompressionStream), so the URL is swallowed
+  // first and the decoded source (or the error) lands in the panel a tick
+  // later. The fragment carries the whole diagram, so this needs no network
+  // call — the zero-egress invariant holds (see the invariant in CLAUDE.md).
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const onPasteCapture = (event: ClipboardEvent) => {
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      if (!isMermaidLiveUrl(text)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void onLiveUrl(text);
+    };
+    el.addEventListener('paste', onPasteCapture, true);
+    return () => el.removeEventListener('paste', onPasteCapture, true);
+  }, [onLiveUrl]);
+
   return (
     <div
       className="editor"
@@ -186,13 +218,26 @@ function Panel({ initial }: { initial: InitialConfig }) {
   // also lets you re-pick the same template to reload it.
   const templateId = useMemo(() => TEMPLATES.find((t) => t.source === source)?.id ?? '', [source]);
 
+  // Bumped on every source change, from anywhere. An import captures it before
+  // its await and drops its result if the source moved on meanwhile — typing or
+  // picking a template must never be undone by a slow read or decode landing
+  // afterwards. This is the callback-shaped twin of the `cancelled` flag the
+  // debounced preview effect below uses; a ref, because the imports are
+  // callbacks with no effect cleanup to hang it on.
+  const sourceGen = useRef(0);
+  useEffect(() => {
+    sourceGen.current += 1;
+  }, [source]);
+
   // Load a .mmd or .md file dropped onto the editor. Reading and parsing happen
   // in the browser; nothing is uploaded.
   const onDropFile = useCallback(async (file: File) => {
     setDropError(null);
+    const gen = sourceGen.current;
     try {
       const text = await file.text();
       const result = extractMermaidSource(text, file.name);
+      if (gen !== sourceGen.current) return; // superseded while reading
       if ('error' in result) {
         setDropError(result.error);
       } else if (result.source.trim()) {
@@ -201,45 +246,129 @@ function Panel({ initial }: { initial: InitialConfig }) {
         setDropError('That file has no Mermaid content.');
       }
     } catch {
-      setDropError('Could not read that file.');
+      if (gen === sourceGen.current) setDropError('Could not read that file.');
     }
   }, []);
 
-  // Make the whole modal a file drop zone. Document-level capture listeners are
-  // used (not React handlers on the panel) for three reasons: dragover must call
-  // preventDefault on EVERY move or the browser just opens the file; a depth
-  // counter tracks enter/leave reliably across nested elements and repeated
-  // drag-in/out cycles; and capture runs before CodeMirror's own drop handling.
-  // Only file drags are intercepted, so dragging text inside the editor still
-  // works. Everything is read in-browser — nothing is uploaded.
+  // Import a diagram from a Mermaid Live Editor URL. The fragment carries the
+  // whole source (zlib-deflated or plain JSON), so this needs no network call —
+  // the zero-egress invariant stays intact. Shared by the editor's paste
+  // handler and this component's drop handler, so a link pasted or dragged
+  // lands the same way. Both callers test isMermaidLiveUrl first — they have to
+  // decide whether to preempt the browser before they can call this — so the
+  // text arriving here is already known to be one.
+  const importLiveUrl = useCallback(async (text: string): Promise<void> => {
+    setDropError(null);
+    const gen = sourceGen.current;
+    try {
+      const decoded = await decodeLiveUrl(text);
+      if (gen !== sourceGen.current) return; // superseded while decoding
+      setSource(decoded);
+    } catch (err) {
+      if (gen !== sourceGen.current) return;
+      // Only the messages live-url wrote for this panel are shown: they point at
+      // different fixes ("…has no diagram in it" is not "couldn't decode it"),
+      // and the LiveUrlError tag is what says a message was chosen rather than
+      // merely escaping. Anything else reaching here is a bug, and its internal
+      // text is not something to put in front of the user.
+      setDropError(
+        err instanceof LiveUrlError && err.message
+          ? err.message
+          : "Couldn't decode that Mermaid Live link.",
+      );
+    }
+  }, []);
+
+  // Make the modal a drop zone. Document-level capture listeners are used (not
+  // React handlers on the panel) for three reasons: dragover must call
+  // preventDefault on EVERY move or the browser just opens the file/link; a
+  // depth counter tracks enter/leave reliably across nested elements and
+  // repeated drag-in/out cycles; and capture runs before CodeMirror's own drop
+  // handling. Everything is read/decoded in-browser — nothing is uploaded or
+  // fetched.
+  //
+  // Two decisions, deliberately kept apart, because conflating them is how a
+  // dropped link either eats an ordinary paste or navigates the iframe away:
+  //
+  //   CLAIMED  — preventDefault, so the browser does not act on the drop. Both
+  //              Files and text/uri-list are claimed ANYWHERE in the modal. The
+  //              default action for a link dropped on a page is to navigate to
+  //              it, and this page is the config iframe: navigating it throws
+  //              away the diagram the user is editing, unsaved. So a link drag
+  //              is always swallowed, even where nothing is done with it.
+  //   IMPORTED — Files anywhere (dropping a .mmd on the settings row clearly
+  //              means "load this"); links only over the source editor, and
+  //              only when they are actually mermaid.live links. A non-live
+  //              link over the editor is left to CodeMirror, which inserts it
+  //              as text — that is how you write a `click A href "…"` target.
+  //
+  // The overlay follows IMPORTED, not CLAIMED: it may only promise what a drop
+  // there would really do. An in-editor text drag carries neither type, so
+  // dragging text around inside the editor still works.
   useEffect(() => {
     let depth = 0;
-    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
+    const isFile = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
+    const isLink = (e: DragEvent) =>
+      Array.from(e.dataTransfer?.types || []).includes('text/uri-list');
+    // Whether the cursor is over the editor. The drop overlay is
+    // pointer-events:none, so e.target still resolves to the element underneath
+    // while it is showing.
+    const overEditor = (e: DragEvent) =>
+      e.target instanceof Element && e.target.closest('.editor') !== null;
+
+    const claimed = (e: DragEvent) => isFile(e) || isLink(e);
+    // Where a drop would import: the overlay's promise, and the depth counter's
+    // unit, so enter/leave stay balanced when a link drag crosses into or out
+    // of the editor.
+    const importable = (e: DragEvent) => isFile(e) || (isLink(e) && overEditor(e));
 
     const onEnter = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
+      if (!claimed(e)) return;
       e.preventDefault();
+      if (!importable(e)) return;
       depth += 1;
       setDragging(true);
     };
     const onOver = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
+      if (!claimed(e)) return;
       e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      if (e.dataTransfer) e.dataTransfer.dropEffect = importable(e) ? 'copy' : 'none';
     };
     const onLeave = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
+      if (!importable(e)) return;
       depth = Math.max(0, depth - 1);
       if (depth === 0) setDragging(false);
     };
     const onDropEvt = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      e.preventDefault();
-      e.stopPropagation();
+      if (!claimed(e)) return;
       depth = 0;
       setDragging(false);
+
       const file = e.dataTransfer?.files?.[0];
-      if (file) onDropFile(file);
+      if (file) {
+        e.preventDefault();
+        e.stopPropagation();
+        onDropFile(file);
+        return;
+      }
+
+      // A dragged LINK. uri-list is "one URI per line", so take the first
+      // token. isMermaidLiveUrl is synchronous, so the decision of whether this
+      // drop is ours can be made before preventDefault — which is what lets an
+      // ordinary link fall through to CodeMirror instead of being answered with
+      // an error the user never asked for. The URL is never fetched as a
+      // fallback; the fragment is the only thing read.
+      const uri = (e.dataTransfer?.getData('text/uri-list') ?? '').trim().split(/\s+/)[0] ?? '';
+      if (uri && overEditor(e) && isMermaidLiveUrl(uri)) {
+        e.preventDefault();
+        e.stopPropagation();
+        void importLiveUrl(uri);
+        return;
+      }
+      // Not an import. Over the editor, leave the event entirely alone so
+      // CodeMirror's own drop handler inserts the URL as text. Anywhere else,
+      // swallow it silently: nothing to do, but the frame must not navigate.
+      if (!overEditor(e)) e.preventDefault();
     };
 
     window.addEventListener('dragenter', onEnter, true);
@@ -252,7 +381,7 @@ function Panel({ initial }: { initial: InitialConfig }) {
       window.removeEventListener('dragleave', onLeave, true);
       window.removeEventListener('drop', onDropEvt, true);
     };
-  }, [onDropFile]);
+  }, [onDropFile, importLiveUrl]);
 
   // Live preview. Debounced, and stale results are discarded — typing fast
   // must never leave you looking at the diagram from three keystrokes ago.
@@ -338,8 +467,8 @@ function Panel({ initial }: { initial: InitialConfig }) {
           <div className="drop-overlay-inner">
             <strong>Drop to load your diagram</strong>
             <span>
-              The file is read here in your browser and turned into the diagram — it isn&rsquo;t
-              opened or uploaded anywhere.
+              It is processed here in your browser and turned into the diagram — nothing is opened
+              or uploaded anywhere.
             </span>
           </div>
         </div>
@@ -407,7 +536,7 @@ function Panel({ initial }: { initial: InitialConfig }) {
         <div className="pane">
           <div className="pane-title">
             Mermaid source
-            <span className="hint"> · or drop a .mmd / .md file</span>
+            <span className="hint"> · or drop a .mmd / .md file, or paste a Mermaid Live link</span>
             {/* Tab indents here (indentWithTab), so the way out has to be
                 stated, not merely bound: SC 2.1.2 requires the user be advised
                 of the method whenever it takes more than Tab itself. Esc-then-
@@ -433,6 +562,7 @@ function Panel({ initial }: { initial: InitialConfig }) {
             onChange={setSource}
             errorLine={preview.status === 'error' ? preview.line : null}
             onTabCaptured={() => setTabCaptured(true)}
+            onLiveUrl={importLiveUrl}
           />
         </div>
 
