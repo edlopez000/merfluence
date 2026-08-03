@@ -9,6 +9,19 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.3.0](https://github.com/edlopez000/merfluence/compare/v1.2.2...v1.3.0) (2026-08-03)
+
+
+### Features
+
+* pan/zoom and maximize in the editor preview ([#117](https://github.com/edlopez000/merfluence/issues/117)) ([fa5413b](https://github.com/edlopez000/merfluence/commit/fa5413bbb0f485175773eb9f2ad2fd4efcb6a9fd))
+
+
+### Bug Fixes
+
+* fit the editor preview to the pane when the diagram resizes ([#119](https://github.com/edlopez000/merfluence/issues/119)) ([5d68209](https://github.com/edlopez000/merfluence/commit/5d68209f5de8ca12509b8ac9fae98aa8609451de))
+* show the editor's Tab-exit hint only when Tab is captured ([#120](https://github.com/edlopez000/merfluence/issues/120)) ([ce2b902](https://github.com/edlopez000/merfluence/commit/ce2b902bd68ef579c03b8c5c7b7685e7b24d0558))
+
 ## [1.2.2](https://github.com/edlopez000/merfluence/compare/v1.2.1...v1.2.2) (2026-08-01)
 
 
