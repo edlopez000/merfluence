@@ -158,8 +158,30 @@ function decodeCssEscapes(value: string) {
  */
 function scrubStyleText(css: string) {
   const scrubbed = stripExternalUrlRefs(css);
+  // The verify pass exists to catch escapes, and decodeCssEscapes can only
+  // change a string that contains a backslash — with none, `decoded` is
+  // `scrubbed` and the two tests below have already been decided by the strip
+  // itself. Skipping it there is the same answer, not a laxer one, and it is
+  // the 100% case: Mermaid emits a whole theme stylesheet (10-20KB) per
+  // diagram, none of it escaped.
+  if (!css.includes('\\')) return scrubbed;
+
   const decoded = decodeCssEscapes(scrubbed);
   return EXTERNAL_URL_FN.test(decoded) || EXTERNAL_IMPORT.test(decoded) ? '' : scrubbed;
+}
+
+/**
+ * True if `stripExternalUrlRefs` could possibly change this value: it only
+ * rewrites `@import` statements and `url(` tokens. A backslash counts too — a
+ * CSS escape can spell either without the literal substring appearing — so the
+ * guard stays conservative rather than assuming what an escape decodes to.
+ *
+ * Purely a fast path. Mermaid puts an inline `style` on most of the elements in
+ * a large diagram, and running two global regex replaces over every one of them
+ * to produce an identical string is the sanitizer's hottest wasted work.
+ */
+function mayCarryUrlRef(value: string) {
+  return value.includes('\\') || /url\(|@import/i.test(value);
 }
 
 // Presentation attributes that can carry a `url(...)` paint/reference. `style`
@@ -196,8 +218,10 @@ DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
   }
 
   // The style attribute holds arbitrary CSS; scrub only external url() refs.
+  // The guard is the same shape as the one on the branch below — the scrubber
+  // is an identity function on a value that can carry no reference at all.
   if (name === 'style') {
-    data.attrValue = stripExternalUrlRefs(value);
+    if (mayCarryUrlRef(value)) data.attrValue = stripExternalUrlRefs(value);
     return;
   }
 

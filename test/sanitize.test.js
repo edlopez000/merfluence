@@ -211,6 +211,95 @@ describe('sanitizeSvg strips external references from <style> element text', () 
   });
 });
 
+describe('the egress scrubbers’ fast-path guards change nothing', () => {
+  // Both scrub paths skip their work when the input provably cannot carry an
+  // external reference: a `style` value with no `url(`, no `@import` and no
+  // backslash, and a `<style>` block with no backslash (the only thing the
+  // escape-decoding verify pass can act on). These are perf guards, so the
+  // property that matters is equivalence — the guarded answer must equal the
+  // unguarded one — not merely "the payload was stripped".
+
+  // The guards' own trigger conditions, so a value that reaches the scrubber
+  // by one route is checked against every route.
+  const PAYLOADS = [
+    // Skipped by both guards: nothing to strip.
+    '.a{fill:#333;stroke-width:2px}',
+    'fill:#333;stroke:#666',
+    // Not skipped: literal tokens.
+    '.b{background-image:url(https://evil.example/p.png)}',
+    '.c{background-image:url(//evil.example/p.png)}',
+    '@import url(https://evil.example/x.css);',
+    '@import "https://evil.example/x.css";',
+    '.d{background-image:URL(HTTPS://EVIL.EXAMPLE/p.png)}',
+    // Not skipped: escapes. `\68` is `h`, `\75` is `u`, so each spells a live
+    // fetch that no literal-substring search would find.
+    '.e{background-image:url(\\68 ttps://evil.example/p.png)}',
+    '.f{background-image:\\75 rl(https://evil.example/p.png)}',
+    // Must survive untouched — the arrowheads and gradients every diagram draws.
+    '.g{marker-end:url(#arrowhead);fill:url(#grad)}',
+    'fill:url(#grad);marker-end:url(#arrowhead)',
+    // A URL that is only mentioned, never fetched.
+    '.h{content:"see https://example.com/docs"}',
+  ];
+
+  // The unguarded reference implementation, kept deliberately verbatim from
+  // render.ts's scrubbers so the comparison is against the old behavior rather
+  // than against the new code restated.
+  const EXTERNAL_URL_FN = /url\(\s*['"]?\s*(?:https?:)?\/\//i;
+  const EXTERNAL_IMPORT = /@import\s+['"]?\s*(?:https?:)?\/\//i;
+  const stripRefs = (value) =>
+    value
+      .replace(/@import\b[^;]*;?/gi, (rule) =>
+        EXTERNAL_IMPORT.test(rule) || EXTERNAL_URL_FN.test(rule) ? '' : rule,
+      )
+      .replace(/url\(\s*['"]?\s*(?:https?:)?\/\/[^)]*\)/gi, '');
+  const decodeEscapes = (value) =>
+    value
+      .replace(/\\([0-9a-fA-F]{1,6})[ \t\n]?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+      .replace(/\\(.)/g, '$1');
+  const unguardedStyleText = (css) => {
+    const scrubbed = stripRefs(css);
+    const decoded = decodeEscapes(scrubbed);
+    return EXTERNAL_URL_FN.test(decoded) || EXTERNAL_IMPORT.test(decoded) ? '' : scrubbed;
+  };
+
+  it('scrubs <style> text exactly as the unguarded verify pass would', () => {
+    for (const css of PAYLOADS) {
+      const { doc } = sanitizedDoc(
+        `<svg xmlns="http://www.w3.org/2000/svg"><style>${css}</style><rect width="10" height="10"/></svg>`,
+      );
+      // The DOM round-trip decodes entities, so compare against the scrub of
+      // what actually reached the hook rather than of the source string.
+      const expected = unguardedStyleText(css);
+      expect(doc.querySelector('style')?.textContent ?? '', `<style> ${css}`).toBe(expected);
+    }
+  });
+
+  it('scrubs the style attribute exactly as the unguarded strip would', () => {
+    for (const value of PAYLOADS) {
+      const { doc } = sanitizedDoc(
+        `<svg xmlns="http://www.w3.org/2000/svg"><rect style="${value.replace(/"/g, '&quot;')}" width="10" height="10"/></svg>`,
+      );
+      const got = doc.querySelector('rect')?.getAttribute('style');
+      // A value the sanitizer drops outright is equally fine — what must not
+      // differ is a value that survives.
+      if (got !== null) expect(got, `style="${value}"`).toBe(stripRefs(value));
+    }
+  });
+
+  it('still blanks an escape-obfuscated <style> block (the guard lets escapes through to the verify)', () => {
+    // The one case the backslash check exists for: skipping the verify here
+    // would ship a live fetch. Re-asserted directly, not just by equivalence.
+    const { out, doc } = sanitizedDoc(
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<style>.d{background-image:url(\\68 ttps://evil.example/p.png)}</style>' +
+        '<rect width="10" height="10"/></svg>',
+    );
+    expect(doc.querySelector('style')?.textContent).toBe('');
+    expect(out).not.toContain('evil.example');
+  });
+});
+
 describe('sanitizeSvg keeps internal references the fix must not break', () => {
   // Positive controls for the egress guard. Mermaid draws arrowheads, gradients
   // and clip-paths as internal url(#id) refs; a blanket url() strip would erase
