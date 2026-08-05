@@ -41,6 +41,15 @@ vi.mock('../src/lib/render.js', async (importActual) => {
   return { ...actual, renderDiagram: h.renderDiagram };
 });
 
+// Partial mock: loadMermaid would dynamically import the real ~850KB module,
+// which the speculative-warm-up assertions only need to observe, not perform.
+// resolvedVersion stays real — the version-label tests assert against it.
+const r = vi.hoisted(() => ({ loadMermaid: vi.fn() }));
+vi.mock('../src/lib/mermaid-registry.js', async (importActual) => {
+  const actual = await importActual();
+  return { ...actual, loadMermaid: r.loadMermaid };
+});
+
 // The Toolbar's export buttons call into png-export, which draws to a canvas —
 // covered directly by test/browser. Here we only need to prove the toolbar wires
 // the click to it with the stage's <svg>, so spy the two functions.
@@ -83,6 +92,7 @@ beforeEach(() => {
   h.resolveTheme.mockImplementation((pref) => (pref === 'dark' ? 'dark' : 'light'));
   p.download.mockReset();
   p.exportPng.mockReset().mockImplementation(() => Promise.resolve());
+  r.loadMermaid.mockReset().mockResolvedValue({});
   ioInstances = [];
   roInstances = [];
   globalThis.ResizeObserver = class {
@@ -327,6 +337,61 @@ describe('host theme flip', () => {
   });
 });
 
+describe('theme trigger resolving to the same theme', () => {
+  it('does not kick a freshly rendered cache miss back to deferred', async () => {
+    // The expensive case the decide() gate exists for: a cache miss that has
+    // already paid for its render must not be re-rendered — or even re-deferred
+    // — by a theme event that resolves to the theme it was rendered with
+    // (host churn, or an explicit light/dark override that ignores the host).
+    h.getConfig.mockResolvedValue({ source: 'flowchart TD\n A-->B', theme: 'light' });
+    h.renderDiagram.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect id="rect-fresh" width="10" height="10"/></svg>',
+    });
+    await mountView();
+    await act(async () => {
+      ioInstances[0].intersect();
+    });
+    expect(root().querySelector('#rect-fresh')).not.toBeNull();
+    const observersBefore = ioInstances.length;
+
+    const trigger = h.onThemeChange.mock.calls.at(-1)[0];
+    await act(async () => {
+      trigger();
+    });
+
+    // Still the same rendered diagram: one render total, no new observer bound,
+    // never back through 'deferred'.
+    expect(h.renderDiagram).toHaveBeenCalledTimes(1);
+    expect(root().querySelector('#rect-fresh')).not.toBeNull();
+    expect(ioInstances.length).toBe(observersBefore);
+  });
+});
+
+describe('speculative Mermaid warm-up', () => {
+  it('starts fetching Mermaid as soon as a miss is deferred, before visibility', async () => {
+    h.getConfig.mockResolvedValue({ source: 'flowchart TD\n A-->B', theme: 'light' });
+    await mountView();
+
+    // Deferred and off-screen: the render has not run, but the module fetch has.
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+    expect(r.loadMermaid).toHaveBeenCalledTimes(1);
+    expect(r.loadMermaid).toHaveBeenCalledWith(undefined);
+  });
+
+  it('never touches Mermaid on a cache hit', async () => {
+    h.getConfig.mockResolvedValue({
+      source: 'flowchart TD\n A-->B',
+      theme: 'light',
+      cacheV: CACHE_VERSION,
+      svgLight: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+    });
+    await mountView();
+
+    expect(r.loadMermaid).not.toHaveBeenCalled();
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+  });
+});
+
 // --- Toolbar and Stage interactions -----------------------------------------
 // These drive the reader view's interactive surface (the 88 lines the state-
 // machine tests above never touch). A cache hit is the cheapest way to mount a
@@ -353,6 +418,19 @@ const btnByLabel = (re) =>
   [...root().querySelectorAll('button')].find((b) => re.test(b.getAttribute('aria-label') || ''));
 const stageEl = () => root().querySelector('.stage');
 const zoomLabel = () => root().querySelector('.zoom-level')?.textContent;
+
+/**
+ * Dispatch a wheel event and let the zoom land. Stage coalesces wheel ticks
+ * into one requestAnimationFrame — a trackpad delivers several per frame, and
+ * each one used to force a synchronous layout — so the zoom applies on the
+ * next frame rather than inside the dispatch.
+ */
+async function wheel(el, init) {
+  await act(async () => {
+    el.dispatchEvent(new WheelEvent('wheel', { cancelable: true, ...init }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+}
 
 // fullscreenElement is a getter in jsdom; redefine it so a test can pretend the
 // stage is (or isn't) the fullscreen element.
@@ -530,17 +608,7 @@ describe('stage: wheel zoom', () => {
     await mountReady();
     expect(zoomLabel()).toBe('100%');
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', {
-          deltaY: -100,
-          ctrlKey: true,
-          clientX: 5,
-          clientY: 5,
-          cancelable: true,
-        }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 5, clientY: 5 });
 
     // 1 - (-100 * 0.002) = 1.2 -> 120%.
     expect(zoomLabel()).toBe('120%');
@@ -549,11 +617,33 @@ describe('stage: wheel zoom', () => {
   it('ignores a plain wheel (no ctrl/meta) while inline', async () => {
     await mountReady();
 
-    await act(async () => {
-      stageEl().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true }));
-    });
+    await wheel(stageEl(), { deltaY: -100 });
 
     expect(zoomLabel()).toBe('100%');
+  });
+
+  it('applies a burst of ticks once, summing the deltas', async () => {
+    // The coalescing has to be exact, not approximate: the zoom is exponential
+    // in the total delta, so summing before applying gives the same result the
+    // per-event path did — one repaint instead of four.
+    await mountReady();
+
+    await act(async () => {
+      for (let i = 0; i < 4; i++) {
+        stageEl().dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: -25,
+            ctrlKey: true,
+            clientX: 5,
+            clientY: 5,
+            cancelable: true,
+          }),
+        );
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+
+    expect(zoomLabel()).toBe('120%'); // same as one -100 tick
   });
 });
 
@@ -592,6 +682,55 @@ describe('stage: pointer pan', () => {
     fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
     fireEvent.lostPointerCapture(stage, { pointerId: 1 });
     expect(stage.className).not.toMatch(/dragging/);
+  });
+
+  it('moves the layer without re-rendering, and hands the position back on release', async () => {
+    // A drag writes .pan's transform straight to the DOM: a pointermove stream
+    // is one event per frame at best, and re-rendering Stage and its toolbar on
+    // each was the cost. React state has to catch up on release, or the next
+    // render would snap the diagram back to where the drag started.
+    await mountReady();
+    const stage = stageEl();
+    const pan = root().querySelector('.pan');
+    const svgBefore = root().querySelector('svg');
+
+    fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
+    for (const [x, y] of [
+      [10, 5],
+      [20, 12],
+      [30, 20],
+    ]) {
+      fireEvent.pointerMove(stage, { clientX: x, clientY: y, buttons: 1 });
+    }
+    expect(pan.style.transform).toContain('translate(30px, 20px)');
+    // Same nodes throughout: nothing was re-created under the gesture.
+    expect(root().querySelector('.pan')).toBe(pan);
+    expect(root().querySelector('svg')).toBe(svgBefore);
+
+    fireEvent.pointerUp(stage, { pointerId: 1 });
+    // State now agrees with the DOM — asserted through a re-render the drag did
+    // not cause, so a state that lagged behind would show up as a snap-back.
+    await act(async () => {
+      fireEvent.keyDown(stage, { key: 'ArrowLeft' });
+    });
+    expect(pan.style.transform).toContain('translate(62px, 20px)'); // 30 + PAN_STEP
+  });
+
+  it('survives a re-render that lands mid-gesture', async () => {
+    // The gesture writes the DOM behind React's back, so a re-render arriving
+    // mid-drag must not repaint the layer from the pan state React still holds.
+    // It doesn't: React patches only the style props that changed between
+    // renders, and pan state is untouched during the drag. Pinned because the
+    // direct-DOM write depends on that.
+    await mountReady();
+    const stage = stageEl();
+
+    await act(async () => {
+      fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
+      fireEvent.pointerMove(stage, { clientX: 40, clientY: 25, buttons: 1 });
+    });
+
+    expect(root().querySelector('.pan').style.transform).toContain('translate(40px, 25px)');
   });
 });
 

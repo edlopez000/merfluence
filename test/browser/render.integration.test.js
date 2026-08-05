@@ -216,19 +216,44 @@ describe('the rendered diagram has a text alternative (WCAG 2.1 SC 1.1.1)', () =
   });
 });
 
-describe('parse-before-render invariant', () => {
-  // render.js parses before it renders precisely so a syntax error never leaves
-  // an orphan container pinned to the document (a real Mermaid failure mode).
-  // Assert both halves: the rejection, and the clean document.
-  it('rejects invalid source and leaves no orphan container', async () => {
+describe('no-orphan-on-error invariant', () => {
+  // A syntax error must never leave an orphan container pinned to the document
+  // (a real Mermaid failure mode). The mechanism differs per major — 11 honors
+  // suppressErrorRendering so render() cleans up after its own parse failure;
+  // 10 ignores that flag, so render.js screens the source with parse() first —
+  // but the observable contract is one and the same. Assert both halves on both
+  // majors: the rejection, and the clean document.
+  const INVALID = 'flowchart TD\n  A --> B\n  C[unterminated';
+
+  it('rejects invalid source and leaves no orphan container (major 11)', async () => {
     const before = document.querySelectorAll('div[id^="dmmd-"], div[id^="mmd-"]').length;
 
-    await expect(
-      renderDiagram({ source: 'flowchart TD\n  A --> B\n  C[unterminated' }),
-    ).rejects.toBeTruthy();
+    await expect(renderDiagram({ source: INVALID })).rejects.toBeTruthy();
 
     const after = document.querySelectorAll('div[id^="dmmd-"], div[id^="mmd-"]').length;
     expect(after).toBe(before);
+  });
+
+  it(
+    'rejects invalid source and leaves no orphan container (major 10)',
+    async () => {
+      const before = document.querySelectorAll('div[id^="dmmd-"], div[id^="mmd-"]').length;
+
+      await expect(renderDiagram({ source: INVALID, versionPref: '10' })).rejects.toBeTruthy();
+
+      const after = document.querySelectorAll('div[id^="dmmd-"], div[id^="mmd-"]').length;
+      expect(after).toBe(before);
+    },
+    RENDER_TIMEOUT,
+  );
+
+  it('still reports the offending line from a render-time parse failure', async () => {
+    // The editor's error gutter reads describeError(err).line. On major 11 the
+    // error now surfaces from render() rather than a screening parse(); the
+    // thrown object must stay line-addressable either way.
+    const { describeError } = await import('../../src/lib/render.js');
+    const err = await renderDiagram({ source: INVALID }).catch((e) => e);
+    expect(describeError(err).line).not.toBeNull();
   });
 
   it('rejects empty source before touching Mermaid', async () => {
@@ -241,6 +266,40 @@ describe('parse-before-render invariant', () => {
     // once the promise resolves, whether or not we mounted the result.
     expect(document.querySelector('body > div[id^="dmmd-"], body > div[id^="mmd-"]')).toBeNull();
   });
+});
+
+describe('concurrent renders on the shared mermaid singleton', () => {
+  // initialize() writes module-global config that the render after it reads
+  // back, so interleaved callers (the editor's live preview against save())
+  // could produce an SVG themed for the *other* caller — the bug class behind
+  // the CACHE_VERSION v1→v2 bump. render.js serializes the critical section;
+  // this proves it on real renders. The ordering itself is unit-tested in
+  // test/render-lock.test.js.
+
+  /** The diagram's theme CSS with its per-render id normalized away. */
+  function themeCss(svg) {
+    const style = mount(svg).querySelector('style');
+    return (style?.textContent ?? '').replace(/mmd-[a-z0-9]+-\d+/g, 'ID');
+  }
+
+  it(
+    'concurrent light and dark renders each keep their own theme',
+    async () => {
+      const source = fixtures.flowchart;
+      // Sequential references first — and prove the probe distinguishes them.
+      const light = themeCss((await renderDiagram({ source, theme: 'light' })).svg);
+      const dark = themeCss((await renderDiagram({ source, theme: 'dark' })).svg);
+      expect(dark).not.toBe(light);
+
+      const [a, b] = await Promise.all([
+        renderDiagram({ source, theme: 'light' }),
+        renderDiagram({ source, theme: 'dark' }),
+      ]);
+      expect(themeCss(a.svg)).toBe(light);
+      expect(themeCss(b.svg)).toBe(dark);
+    },
+    RENDER_TIMEOUT,
+  );
 });
 
 describe('cache re-sanitize boundary', () => {

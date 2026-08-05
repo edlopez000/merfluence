@@ -65,6 +65,16 @@
         width: fit-content;
         max-width: 100%;
         margin: 0 auto;
+        /* Deliberately NOT will-change: transform (or any other compositor
+           promotion). It looks right — this layer's transform changes every
+           frame of a gesture — but promoting it rasterizes the diagram once
+           and lets the compositor scale that bitmap, so zooming magnifies
+           pixels instead of re-rendering the vector. On a large diagram the
+           raster it would need at high zoom is past the GPU's texture limit,
+           so the layer is rasterized at a capped scale and stays permanently
+           blurry rather than sharpening when the gesture ends. Re-rasterizing
+           per frame IS the crispness; an SVG that renders as a fuzzy bitmap
+           gives up the reason to ship SVG at all. */
       }
       .stage svg {
         display: block;

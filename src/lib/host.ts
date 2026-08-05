@@ -35,14 +35,57 @@ export function resolveTheme(pref: string | null | undefined) {
 }
 
 /**
+ * The mode resolveTheme('auto') would pick right now: the typed host signal
+ * when known, otherwise the OS preference. This is what onThemeChange gates
+ * its notifications on — comparing hostColorMode alone would go blind to an
+ * OS flip while the host mode is unknown/auto.
+ */
+function effectiveMode() {
+  if (hostColorMode) return hostColorMode;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/**
  * Re-render when the host flips light/dark while the page is open. The DOM
  * attribute and the OS media query are only used as *triggers* here; the actual
  * value is re-read from getContext().theme, the typed signal, before we notify.
+ *
+ * Triggers arrive in bursts and repeat without a change behind them —
+ * enableTheme()'s own startup write of data-color-mode is one guaranteed
+ * no-op trigger per macro on the page — and each used to cost a getContext()
+ * round trip plus a full consumer re-decide. Two guards close that: concurrent
+ * triggers coalesce into one in-flight refresh (re-checked after it lands, so
+ * a change arriving mid-refresh is not lost), and the handler only fires when
+ * the mode a consumer would resolve actually changed.
  */
 export function onThemeChange(handler: () => void) {
+  // The mode the consumer last acted on — seeded now, while the registering
+  // consumer is deciding against the current cache. Compared against a *fresh*
+  // read after each refresh; sampling "before" at trigger time instead would
+  // race the very change being reported (the DOM/OS already flipped by then).
+  let lastMode = effectiveMode();
+  let inFlight = false;
+  let queued = false;
+
   const onTrigger = async () => {
-    await refreshHostTheme();
-    handler();
+    if (inFlight) {
+      queued = true;
+      return;
+    }
+    inFlight = true;
+    try {
+      do {
+        queued = false;
+        await refreshHostTheme();
+        const mode = effectiveMode();
+        if (mode !== lastMode) {
+          lastMode = mode;
+          handler();
+        }
+      } while (queued);
+    } finally {
+      inFlight = false;
+    }
   };
 
   const mq = window.matchMedia?.('(prefers-color-scheme: dark)');

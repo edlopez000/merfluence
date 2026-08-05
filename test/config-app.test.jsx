@@ -166,6 +166,19 @@ async function mountConfig() {
 const saveButton = () =>
   [...document.querySelectorAll('button')].find((b) => /save diagram/i.test(b.textContent));
 
+/**
+ * Dispatch a wheel event and let the zoom land. Stage coalesces wheel ticks
+ * into one requestAnimationFrame — a trackpad delivers several per frame, and
+ * each one used to force a synchronous layout — so the zoom applies on the
+ * next frame rather than inside the dispatch.
+ */
+async function wheel(el, init) {
+  await act(async () => {
+    el.dispatchEvent(new WheelEvent('wheel', { cancelable: true, ...init }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+}
+
 // Wait for the debounced preview to land and enable the Save button.
 async function waitForPreview() {
   await waitFor(() => {
@@ -221,17 +234,7 @@ describe('interactive preview', () => {
     await mountConfig();
     await waitForPreview();
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', {
-          deltaY: -100,
-          ctrlKey: true,
-          clientX: 5,
-          clientY: 5,
-          cancelable: true,
-        }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 5, clientY: 5 });
     // 1 - (-100 * 0.002) = 1.2 -> 120%.
     expect(zoomLabel()).toBe('120%');
 
@@ -372,11 +375,7 @@ describe('auto-fit in the preview', () => {
     await waitForPreview();
     await stubRects(CLIPPED);
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 });
     expect(zoomLabel()).toBe('120%');
 
     // The pane resizing is not a reason to throw away a view they chose...
@@ -412,11 +411,7 @@ describe('auto-fit in the preview', () => {
     await fireObserver('.preview .pan');
     expect(zoomLabel()).toBe('38%');
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 });
     fireEvent.keyDown(stageEl(), { key: '0' });
 
     // 100% here would put the user straight back into the clipped view this
@@ -431,11 +426,7 @@ describe('auto-fit in the preview', () => {
     // magnifies it to 200%, auto-fit would snap it back to 100%.
     await stubRects(FITS);
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 });
     expect(zoomLabel()).toBe('120%');
 
     // No Fullscreen API in jsdom, so this takes the CSS fallback — the path the
@@ -463,37 +454,22 @@ describe('auto-fit in the preview', () => {
 });
 
 describe('save', () => {
-  it('renders dark only after light resolves (sequential, not Promise.all)', async () => {
+  it('reuses the preview render for its theme and renders only the other', async () => {
     await mountConfig();
     await waitForPreview();
-
-    // Swap in a gated implementation: the light render hangs until we release it,
-    // so if save awaited the two renders sequentially, dark cannot have started.
-    // Under Promise.all both calls would fire synchronously and dark would start
-    // immediately — which is the singleton-theme-race bug this ordering prevents.
-    let releaseLight;
-    let darkStarted = false;
-    h.renderDiagram.mockImplementation(({ theme }) => {
-      if (theme === 'light') {
-        return new Promise((resolve) => {
-          releaseLight = () => resolve({ svg: '<svg data-theme="light"><rect/></svg>' });
-        });
-      }
-      darkStarted = true;
-      return Promise.resolve({ svg: '<svg data-theme="dark"><rect/></svg>' });
-    });
+    const previewCalls = h.renderDiagram.mock.calls.length;
 
     await act(async () => {
       fireEvent.click(saveButton());
     });
-    expect(darkStarted).toBe(false); // light is still pending
-
-    await act(async () => {
-      releaseLight();
-    });
-    expect(darkStarted).toBe(true);
-
     await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
+
+    // The preview just rendered light from these exact inputs, so save pays for
+    // exactly one more render — the dark leg.
+    const saveCalls = h.renderDiagram.mock.calls.slice(previewCalls);
+    expect(saveCalls).toHaveLength(1);
+    expect(saveCalls[0][0]).toMatchObject({ theme: 'dark' });
+
     const payload = h.submitConfig.mock.calls[0][0];
     expect(payload).toMatchObject({
       source: SOURCE,
@@ -507,6 +483,54 @@ describe('save', () => {
     });
     expect(payload.svgLight).toContain('data-theme="light"');
     expect(payload.svgDark).toContain('data-theme="dark"');
+  });
+
+  it('renders both themes fresh, sequentially, when a setting changed after the preview', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    // Gated implementation: the light render hangs until released, so if save
+    // runs its two renders sequentially, dark cannot start while light pends.
+    // Under Promise.all both would fire together — the singleton-theme-race bug
+    // this ordering (and the render.js lock beneath it) prevents.
+    let releaseLight;
+    let lightPending = false;
+    let darkStartedWhileLightPending = false;
+    h.renderDiagram.mockImplementation(({ theme }) => {
+      if (theme === 'light') {
+        lightPending = true;
+        return new Promise((resolve) => {
+          releaseLight = () => {
+            lightPending = false;
+            resolve({ svg: '<svg data-theme="light-fresh"><rect/></svg>' });
+          };
+        });
+      }
+      if (lightPending) darkStartedWhileLightPending = true;
+      return Promise.resolve({ svg: '<svg data-theme="dark-fresh"><rect/></svg>' });
+    });
+
+    // Flip a render input after the preview landed, then save before the
+    // debounce re-renders: the stored preview tuple no longer matches, so save
+    // must not trust it for either leg.
+    await act(async () => {
+      fireEvent.click(document.querySelector('.controls input[type="checkbox"]'));
+    });
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+
+    expect(releaseLight).toBeDefined(); // the light leg went to a fresh render
+    await act(async () => {
+      releaseLight();
+    });
+
+    await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
+    expect(darkStartedWhileLightPending).toBe(false);
+    const payload = h.submitConfig.mock.calls[0][0];
+    expect(payload).toMatchObject({ useMaxWidth: false, cacheV: CACHE_VERSION });
+    expect(payload.svgLight).toContain('light-fresh');
+    expect(payload.svgDark).toContain('dark-fresh');
   });
 
   it('persists source alone (no cache) when a save-time render throws', async () => {
@@ -1005,6 +1029,32 @@ describe('template picker', () => {
         expect.objectContaining({ source: template.source }),
       ),
     );
+  });
+});
+
+describe('theme flip in the editor', () => {
+  it('reconfigures the theme in place, keeping the editor and its history', async () => {
+    // The theme used to be baked into the EditorView's extensions, so flipping
+    // it destroyed and rebuilt the whole view — losing the undo history and the
+    // cursor along with it. A CodeMirror compartment swaps it in place.
+    await mountConfig();
+    await waitForPreview();
+
+    const editorBefore = document.querySelector('.cm-editor');
+    const contentBefore = document.querySelector('.cm-content').textContent;
+    expect(editorBefore).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.change(selectByLabel('Theme'), { target: { value: 'dark' } });
+    });
+    // Let the dynamically-imported dark theme land.
+    await waitFor(() => {
+      expect(document.querySelector('.cm-editor')).toBe(editorBefore);
+    });
+
+    // Same view instance, same document: nothing was torn down.
+    expect(document.querySelector('.cm-editor')).toBe(editorBefore);
+    expect(document.querySelector('.cm-content').textContent).toBe(contentBefore);
   });
 });
 

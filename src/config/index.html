@@ -227,6 +227,10 @@
         width: fit-content;
         max-width: 100%;
         margin: 0 auto;
+        /* Deliberately NOT will-change: transform — see the matching note in
+           src/view/index.html. Promoting this layer makes a zoomed diagram
+           magnify a cached bitmap instead of re-rendering the vector, and on a
+           large diagram it stays blurry for good. */
       }
       .stage svg {
         display: block;

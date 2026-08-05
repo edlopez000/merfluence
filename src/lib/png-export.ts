@@ -21,7 +21,17 @@ export function download(blob: Blob, filename: string) {
  */
 export async function exportPng(svgEl: SVGElement, scale = 2) {
   const clone = svgEl.cloneNode(true) as SVGElement;
-  const { width, height } = svgEl.getBoundingClientRect();
+  // Not getBoundingClientRect(): the SVG sits inside the Stage's pan layer,
+  // whose `scale(zoom)` multiplies into the reported rect. Exporting at 400%
+  // zoom would then paint an up-to-16x-larger canvas backing store — past the
+  // browser's canvas ceiling it silently comes out blank. The used CSS size is
+  // the same measurement *before* ancestor transforms, so the export is the
+  // diagram's own size at every zoom level. (Rect stays as the fallback for an
+  // SVG measured outside the render tree, where computed sizes read as auto.)
+  const style = getComputedStyle(svgEl);
+  const rect = svgEl.getBoundingClientRect();
+  const width = Number.parseFloat(style.width) || rect.width;
+  const height = Number.parseFloat(style.height) || rect.height;
   clone.setAttribute('width', String(width));
   clone.setAttribute('height', String(height));
 

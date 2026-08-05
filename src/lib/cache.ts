@@ -50,11 +50,17 @@ type CacheFields = {
 
 // SVG can contain multi-byte characters (labels, arrows), so measure encoded
 // bytes rather than string length.
-const byteLength = (str: string) => new TextEncoder().encode(str).length;
+const encoder = new TextEncoder();
+const byteLength = (str: string) => encoder.encode(str).length;
 
 /** True if this SVG is a non-empty string within the per-string byte budget. */
 export function fitsCache(svg: unknown) {
-  return typeof svg === 'string' && svg.length > 0 && byteLength(svg) <= MAX_SVG_BYTES;
+  if (typeof svg !== 'string' || svg.length === 0) return false;
+  // UTF-8 never encodes a string to fewer bytes than it has UTF-16 code units,
+  // so a string already longer than the budget is over it — reject without
+  // materializing a multi-megabyte byte array just to measure it.
+  if (svg.length > MAX_SVG_BYTES) return false;
+  return byteLength(svg) <= MAX_SVG_BYTES;
 }
 
 /**

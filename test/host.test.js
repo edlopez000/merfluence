@@ -120,6 +120,95 @@ describe('onThemeChange', () => {
     await tick();
     expect(handler).toHaveBeenCalledTimes(1); // no further calls after unbind
   });
+
+  it('skips the handler when the resolved mode did not change', async () => {
+    const host = await freshHost();
+    view.getContext.mockResolvedValue({ theme: { colorMode: 'dark' } });
+    await host.getConfig(); // cache filled: dark
+    const handler = vi.fn();
+    const stop = host.onThemeChange(handler);
+
+    // The startup echo: enableTheme() makes the host write data-color-mode with
+    // the mode we already cached. The value is still re-read from the typed
+    // signal — the trigger just must not cascade into a consumer re-decide.
+    const callsBefore = view.getContext.mock.calls.length;
+    document.documentElement.setAttribute('data-color-mode', 'dark');
+    await tick();
+
+    expect(view.getContext.mock.calls.length).toBe(callsBefore + 1);
+    expect(handler).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('coalesces triggers arriving while a refresh is in flight, without losing the change', async () => {
+    const host = await freshHost();
+    view.getContext.mockResolvedValue({ theme: { colorMode: 'light' } });
+    await host.getConfig(); // cache filled: light
+
+    // Hand-resolved contexts so triggers can pile up behind a pending refresh.
+    const pending = [];
+    view.getContext.mockImplementation(() => new Promise((r) => pending.push(r)));
+    const handler = vi.fn();
+    const stop = host.onThemeChange(handler);
+
+    document.documentElement.setAttribute('data-color-mode', 'dark');
+    await tick(); // first refresh now in flight
+    expect(pending.length).toBe(1);
+
+    // A burst of further triggers must not fan out into parallel round trips.
+    document.documentElement.setAttribute('data-color-mode', 'light');
+    await tick();
+    document.documentElement.setAttribute('data-color-mode', 'dark');
+    await tick();
+    expect(pending.length).toBe(1);
+
+    // The in-flight refresh lands on dark: one notification...
+    pending.shift()({ theme: { colorMode: 'dark' } });
+    await tick();
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // ...and exactly one queued re-check for the burst, which — still dark —
+    // notifies nobody.
+    expect(pending.length).toBe(1);
+    pending.shift()({ theme: { colorMode: 'dark' } });
+    await tick();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(pending.length).toBe(0);
+    stop();
+  });
+
+  it('fires when the OS preference flips while the host mode is unknown', async () => {
+    const host = await freshHost();
+    // Host never reports a mode (auto): resolution falls to the media query,
+    // so the gate has to compare that too, not just the cached host mode.
+    view.getContext.mockResolvedValue({});
+    await host.getConfig();
+
+    let matches = false;
+    let mqListener;
+    window.matchMedia = () => ({
+      get matches() {
+        return matches;
+      },
+      addEventListener: (_, fn) => {
+        mqListener = fn;
+      },
+      removeEventListener: () => {},
+    });
+
+    const handler = vi.fn();
+    const stop = host.onThemeChange(handler);
+
+    matches = true; // OS goes dark
+    mqListener();
+    await tick();
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    mqListener(); // spurious re-fire, still dark
+    await tick();
+    expect(handler).toHaveBeenCalledTimes(1);
+    stop();
+  });
 });
 
 describe('defensive bridge wrappers', () => {
