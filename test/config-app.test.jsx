@@ -602,6 +602,26 @@ describe('drag-drop', () => {
       expect(alert?.textContent).toMatch(/no ```?mermaid code block/i);
     });
   });
+
+  it('reports an empty mermaid block instead of blanking the editor', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    // extractMermaidSource finds the block and returns { source: '' }, which is
+    // not an error — the panel's own emptiness check is what stands between the
+    // author and a wiped editor. This is the other half of the empty-block case
+    // pinned in test/mermaid-file.test.js.
+    const file = new File(['```mermaid\n   \n```\n'], 'empty.md', { type: 'text/markdown' });
+
+    await act(async () => {
+      fireFileDrag('drop', file);
+    });
+
+    await waitFor(() => {
+      const alert = document.querySelector('.diagnostic[role="alert"]');
+      expect(alert?.textContent).toMatch(/no mermaid content/i);
+    });
+  });
 });
 
 // --- Mermaid Live editor import (issue #106) --------------------------------
