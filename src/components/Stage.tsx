@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ZOOM_STEP,
@@ -677,6 +677,14 @@ export function Stage({
     event.preventDefault();
   };
 
+  // React 19's dangerouslySetInnerHTML no longer compares the previous and next
+  // HTML strings — only the object's identity gates the write. A fresh object
+  // literal here would re-run `innerHTML = svg` on every re-render (each drag
+  // pointermove, each editor keystroke), destroying and re-parsing the whole
+  // SVG subtree. Keeping the object stable while `svg` is unchanged makes the
+  // identity check do what the string compare used to.
+  const svgHtml = useMemo(() => ({ __html: svg }), [svg]);
+
   return (
     <>
       {/* The .stage is a fixed clipping frame in normal flow: it establishes the
@@ -718,7 +726,7 @@ export function Stage({
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: '0 0',
           }}
-          dangerouslySetInnerHTML={{ __html: svg }}
+          dangerouslySetInnerHTML={svgHtml}
         />
         {/* The shortcuts have no visible affordance otherwise — nothing on screen
             says the diagram takes keys at all. CSS shows this only while the
