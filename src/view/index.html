@@ -344,7 +344,10 @@
         justify-content: center;
         padding: 6px 6px;
         font-variant-numeric: tabular-nums;
-        min-width: 4ch;
+        /* 5ch, not 4: a heavily shrunk diagram now zooms past 999%, and the
+           readout is the raw transform factor, so the toolbar would reflow the
+           moment it gained a digit. */
+        min-width: 5ch;
       }
 
       /* Version stamp: overlaid bottom-left and revealed on hover, like the

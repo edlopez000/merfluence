@@ -14,11 +14,43 @@
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 4;
 
+/**
+ * The factor one zoom step multiplies by — a button press, a +/- key, or 100
+ * units of wheel delta. Multiplicative rather than additive because the zoom
+ * this scales is itself relative to a diagram that CSS may already have shrunk
+ * (see maxZoomFor): an additive 0.2 is a 3x jump from a base of 0.1 and a 5%
+ * nudge near the top, so the same keypress would mean something different at
+ * every scale. 1.2 is chosen so one step from 100% still lands on exactly 120%,
+ * which is what the additive step did.
+ */
+export const ZOOM_STEP = 1.2;
+
 type Point = { x: number; y: number };
 type Rect = { left: number; top: number; width: number; height: number };
 
-export function clampZoom(z: number) {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+export function clampZoom(z: number, maxZoom: number = MAX_ZOOM) {
+  return Math.min(maxZoom, Math.max(MIN_ZOOM, z));
+}
+
+/**
+ * The interactive zoom ceiling for a diagram the browser has already scaled by
+ * `displayScale` — its laid-out width over its intrinsic (viewBox) width.
+ *
+ * MAX_ZOOM alone is a multiplier on whatever size the diagram is *displayed* at,
+ * not on its real size, and Mermaid's useMaxWidth plus `max-width: 100%` shrink
+ * a wide diagram to the column (or, maximized, to the screen) before the
+ * transform ever applies. So a flat cap gives a big diagram *less* absolute
+ * magnification the bigger it gets — a 8000px diagram in a 760px column tops out
+ * around 0.38x its natural size, i.e. unreadable. Dividing the cap by the shrink
+ * restores the intended meaning: 400% is 400% of the diagram's own pixels, and
+ * every diagram can reach it.
+ *
+ * min(scale, 1) so a Size preset that scales a diagram *up* never lowers the
+ * ceiling below MAX_ZOOM; a scale we can't measure falls back to it too.
+ */
+export function maxZoomFor(displayScale: number) {
+  if (!Number.isFinite(displayScale) || displayScale <= 0) return MAX_ZOOM;
+  return MAX_ZOOM / Math.min(displayScale, 1);
 }
 
 /**
@@ -26,6 +58,9 @@ export function clampZoom(z: number) {
  * client coords (anchorX, anchorY) visually fixed. `panLeft`/`panTop` are the
  * pan layer's current on-screen top-left. Returns null when the clamped zoom is
  * unchanged (already at a bound), meaning there's nothing to apply.
+ *
+ * `maxZoom` defaults to the flat MAX_ZOOM; callers that can measure the
+ * diagram's shrink-to-fit pass the ceiling from maxZoomFor instead.
  *
  * Derivation: the content point under the anchor is c = (anchor - panLeft)/old.
  * To keep it under the anchor after zooming, the translation must move by
@@ -39,6 +74,7 @@ export function anchoredZoom({
   anchorY,
   panLeft,
   panTop,
+  maxZoom = MAX_ZOOM,
 }: {
   oldZoom: number;
   nextZoom: number;
@@ -47,8 +83,9 @@ export function anchoredZoom({
   anchorY: number;
   panLeft: number;
   panTop: number;
+  maxZoom?: number;
 }) {
-  const zoom = clampZoom(nextZoom);
+  const zoom = clampZoom(nextZoom, maxZoom);
   if (zoom === oldZoom) return null;
   const shift = 1 - zoom / oldZoom;
   return {
@@ -97,6 +134,11 @@ export function fitView({ content, view }: { content: Rect; view: Rect }) {
   if (!dims.every((n) => Number.isFinite(n) && n > 0)) return null;
   // min so the binding axis fits; clamp so a tiny diagram stops at MAX_ZOOM
   // rather than filling the screen at absurd scale.
+  //
+  // Deliberately the *flat* MAX_ZOOM, not maxZoomFor's ceiling: this clamp only
+  // ever binds on a diagram small enough to be magnified, and a small diagram is
+  // never shrunk to fit, so its measured ceiling would be MAX_ZOOM anyway. The
+  // raised ceiling is for what the user can push past this fit to, by hand.
   const zoom = clampZoom(Math.min(view.width / content.width, view.height / content.height));
   return {
     zoom,

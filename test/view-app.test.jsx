@@ -643,10 +643,14 @@ describe('stage: keyboard', () => {
     fireEvent.keyDown(stageEl(), { key: '+' });
     expect(zoomLabel()).toBe('120%');
 
-    // '=' is the unshifted key '+' sits on, so it zooms in too.
+    // '=' is the unshifted key '+' sits on, so it zooms in too. The step is a
+    // ratio, not an addend (see ZOOM_STEP), so two of them compound to 1.2^2
+    // rather than adding to 140% — which is what keeps one press meaning the
+    // same proportional change at every scale.
     fireEvent.keyDown(stageEl(), { key: '=' });
-    expect(zoomLabel()).toBe('140%');
+    expect(zoomLabel()).toBe('144%');
 
+    // ...and '-' is its exact inverse, so it lands back where '+' left off.
     fireEvent.keyDown(stageEl(), { key: '-' });
     expect(zoomLabel()).toBe('120%');
   });

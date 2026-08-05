@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   MIN_ZOOM,
   MAX_ZOOM,
+  ZOOM_STEP,
   clampZoom,
   anchoredZoom,
   fitView,
+  maxZoomFor,
   shrinkToFit,
   untransformedRect,
 } from '../src/lib/zoom.js';
@@ -14,6 +16,49 @@ describe('clampZoom', () => {
     expect(clampZoom(0.01)).toBe(MIN_ZOOM);
     expect(clampZoom(99)).toBe(MAX_ZOOM);
     expect(clampZoom(1.5)).toBe(1.5);
+  });
+
+  it('honours an explicit ceiling above MAX_ZOOM', () => {
+    expect(clampZoom(99, 40)).toBe(40);
+    expect(clampZoom(12, 40)).toBe(12);
+    // The floor is not raised with it.
+    expect(clampZoom(0.01, 40)).toBe(MIN_ZOOM);
+  });
+});
+
+describe('maxZoomFor', () => {
+  it('raises the ceiling in proportion to how far the diagram was shrunk', () => {
+    // A diagram displayed at a tenth of its real size must still reach 400% of
+    // that real size — which is 40x the transform.
+    expect(maxZoomFor(0.1)).toBe(40);
+    expect(maxZoomFor(0.25)).toBe(16);
+  });
+
+  it('leaves an unshrunk diagram on the flat MAX_ZOOM', () => {
+    expect(maxZoomFor(1)).toBe(MAX_ZOOM);
+  });
+
+  it('never lowers the ceiling for a diagram that was scaled up', () => {
+    // A Size preset can magnify a small diagram; that must not cost the user
+    // zoom range they would have had at natural size.
+    expect(maxZoomFor(2)).toBe(MAX_ZOOM);
+  });
+
+  it('falls back to MAX_ZOOM when the scale cannot be measured', () => {
+    for (const bad of [0, -1, NaN, Infinity]) {
+      expect(maxZoomFor(bad)).toBe(MAX_ZOOM);
+    }
+  });
+});
+
+describe('ZOOM_STEP', () => {
+  it('is multiplicative and still lands one step from 100% on 120%', () => {
+    // The additive 0.2 it replaced did the same at 1, which is what keeps the
+    // gesture feeling unchanged at the scale users spend most time at.
+    expect(1 * ZOOM_STEP).toBeCloseTo(1.2, 10);
+    // Being a ratio is the point: the same press is proportional down low too,
+    // where an additive 0.2 was a 3x jump.
+    expect(0.1 * ZOOM_STEP).toBeCloseTo(0.12, 10);
   });
 });
 
@@ -31,6 +76,15 @@ describe('anchoredZoom', () => {
     expect(anchoredZoom({ ...base, nextZoom: 1 })).toBeNull();
     // Already at the max bound: nextZoom clamps back to it, so no change.
     expect(anchoredZoom({ ...base, oldZoom: MAX_ZOOM, nextZoom: 99 })).toBeNull();
+  });
+
+  it('zooms past MAX_ZOOM when handed a raised ceiling', () => {
+    // The shrunk-diagram case: at the old flat cap this returned null and the
+    // user simply could not zoom in any further.
+    const r = anchoredZoom({ ...base, oldZoom: MAX_ZOOM, nextZoom: 10, maxZoom: 40 });
+    expect(r.zoom).toBe(10);
+    // ...and the raised ceiling still binds at its own value.
+    expect(anchoredZoom({ ...base, oldZoom: 40, nextZoom: 99, maxZoom: 40 })).toBeNull();
   });
 
   it('leaves pan unchanged when the anchor sits on the pan origin', () => {
