@@ -1032,6 +1032,32 @@ describe('template picker', () => {
   });
 });
 
+describe('theme flip in the editor', () => {
+  it('reconfigures the theme in place, keeping the editor and its history', async () => {
+    // The theme used to be baked into the EditorView's extensions, so flipping
+    // it destroyed and rebuilt the whole view — losing the undo history and the
+    // cursor along with it. A CodeMirror compartment swaps it in place.
+    await mountConfig();
+    await waitForPreview();
+
+    const editorBefore = document.querySelector('.cm-editor');
+    const contentBefore = document.querySelector('.cm-content').textContent;
+    expect(editorBefore).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.change(selectByLabel('Theme'), { target: { value: 'dark' } });
+    });
+    // Let the dynamically-imported dark theme land.
+    await waitFor(() => {
+      expect(document.querySelector('.cm-editor')).toBe(editorBefore);
+    });
+
+    // Same view instance, same document: nothing was torn down.
+    expect(document.querySelector('.cm-editor')).toBe(editorBefore);
+    expect(document.querySelector('.cm-content').textContent).toBe(contentBefore);
+  });
+});
+
 describe('settings flow into the save payload', () => {
   it('carries theme, size, version and full-width toggle; cancel closes', async () => {
     await mountConfig();

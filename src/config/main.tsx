@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { EditorState, StateEffect, StateField } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state';
+import type { Extension } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
 import { Decoration } from '@codemirror/view';
-import { oneDark } from '@codemirror/theme-one-dark';
 
 import { mermaid as mermaidLang } from './mermaid-lang.js';
 import { renderDiagram, describeError } from '../lib/render.js';
@@ -77,6 +77,15 @@ function Editor({
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // The dark theme is swapped through a compartment rather than by rebuilding
+  // the view, so a light/dark flip keeps the document, the cursor and — the
+  // part that was a real bug — the undo history.
+  const themeCompartment = useRef(new Compartment());
+  // The last document text we handed to onChange. Both the update listener and
+  // the value-sync effect below need to know whether `value` came from our own
+  // typing, and each was answering that by serializing the whole document (up
+  // to MAX_SOURCE_CHARS) on every keystroke.
+  const lastEmitted = useRef(value);
 
   useEffect(() => {
     const extensions = [
@@ -104,9 +113,12 @@ function Editor({
         'aria-describedby': 'editor-exit-hint',
       }),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) onChange(update.state.doc.toString());
+        if (!update.docChanged) return;
+        const text = update.state.doc.toString();
+        lastEmitted.current = text;
+        onChange(text);
       }),
-      ...(dark ? [oneDark] : []),
+      themeCompartment.current.of([]),
     ];
 
     const view = new EditorView({
@@ -117,18 +129,45 @@ function Editor({
     view.focus();
 
     return () => view.destroy();
-    // Rebuilt on theme flip; the doc is re-seeded from the latest value below.
+    // Built once. The theme is reconfigured through the compartment above, and
+    // the doc is kept in step by the value effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Swap the dark theme in and out of its compartment. oneDark is loaded only
+  // when it is first needed, keeping it out of the light editor's entry chunk;
+  // the flag is re-read on arrival so a flip back to light while the chunk is
+  // in flight doesn't apply a theme nobody asked for any more.
+  useEffect(() => {
+    let cancelled = false;
+    const reconfigure = (extension: Extension) => {
+      if (!cancelled) {
+        viewRef.current?.dispatch({
+          effects: themeCompartment.current.reconfigure(extension),
+        });
+      }
+    };
+    if (dark) {
+      import('@codemirror/theme-one-dark').then((m) => reconfigure(m.oneDark));
+    } else {
+      reconfigure([]);
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [dark]);
 
   // Push external value changes (e.g. picking a "Start from" template) into the
-  // document. When the change originated from typing, `value` already equals the
-  // doc, so this no-ops — no cursor jump, no feedback loop with onChange.
+  // document. When the change originated from typing, `value` is the text the
+  // update listener just emitted, so this no-ops on the identity check alone —
+  // no cursor jump, no feedback loop with onChange, and no second full
+  // serialization of the document per keystroke.
   useEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || value === lastEmitted.current) return;
     const current = view.state.doc.toString();
     if (current !== value) {
+      lastEmitted.current = value;
       view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
     }
   }, [value]);
@@ -228,7 +267,13 @@ function Panel({ initial }: { initial: InitialConfig }) {
   // than stored, so it reflects the active template while the source still
   // matches one, and falls back to the placeholder the moment you edit — which
   // also lets you re-pick the same template to reload it.
-  const templateId = useMemo(() => TEMPLATES.find((t) => t.source === source)?.id ?? '', [source]);
+  // Compare lengths before contents: this runs on every keystroke, and an
+  // edited source almost never has the exact length of a template, so the
+  // cheap check answers it without a full string comparison per template.
+  const templateId = useMemo(
+    () => TEMPLATES.find((t) => t.source.length === source.length && t.source === source)?.id ?? '',
+    [source],
+  );
 
   // Bumped on every source change, from anywhere. An import captures it before
   // its await and drops its result if the source moved on meanwhile — typing or

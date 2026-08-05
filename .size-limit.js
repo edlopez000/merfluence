@@ -19,6 +19,11 @@
 // Baselines measured 2026-07-21 (Mermaid 11.x / 10.x, size-limit 12.1):
 //   reader view entry   — 73.57 kB brotli   (budget 80 kB,  ~9% headroom)
 //   config editor entry  — 153.76 kB brotli  (budget 165 kB, ~7% headroom)
+// Re-measured 2026-08-05, after the editor's dark theme moved to a dynamic
+// import (it loads only when the editor is actually dark):
+//   config editor entry  — 157.29 kB brotli  (budget 162 kB, ~3% headroom)
+// The number rose against the 2026-07-21 baseline despite that split — ordinary
+// dependency churn since — so the budget is tightened rather than raised.
 // Headroom absorbs ordinary dependency churn while still failing hard on a
 // folded-in engine (the smallest deferred engine is far larger than the gap).
 // Raising a limit should be a conscious edit here, with the new baseline noted.
@@ -31,6 +36,6 @@ export default [
   {
     name: 'config editor — entry chunk (initial load)',
     path: 'static/config/dist/assets/entry-*.js',
-    limit: '165 kB',
+    limit: '162 kB',
   },
 ];
