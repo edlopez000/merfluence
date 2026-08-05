@@ -39,6 +39,11 @@ function baseConfig({ theme, useMaxWidth }: { theme: string; useMaxWidth: boolea
     // pre-parse enforceSourceLimit() guard, which fires first with a friendlier
     // message; this is the library-level backstop at the same number.
     maxTextSize: MAX_SOURCE_CHARS,
+    // On a failed render(), remove the temp container and rethrow instead of
+    // pinning an error <div> to the document. Honored by major 11, which lets
+    // renderDiagram skip its screening pre-parse there; major 10 ignores the
+    // key and keeps the pre-parse (see renderDiagram).
+    suppressErrorRendering: true,
     theme: theme === 'dark' ? 'dark' : 'default',
     fontFamily: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     flowchart: { htmlLabels: false, useMaxWidth },
@@ -353,13 +358,17 @@ export async function renderDiagram({
   if (!trimmed) throw new Error('Diagram is empty');
   enforceSourceLimit(trimmed);
 
+  const major = resolveMajor(versionPref);
   const { svg } = await withMermaidLock(async () => {
     const mermaid = await loadMermaid(versionPref);
-    initializeOnce(mermaid, resolveMajor(versionPref), { theme, useMaxWidth });
+    initializeOnce(mermaid, major, { theme, useMaxWidth });
 
-    // parse() first so a syntax error never leaves an orphan <div id="dmmd-...">
-    // pinned to the document, which is a real Mermaid failure mode.
-    await mermaid.parse(trimmed);
+    // Major 10 doesn't honor suppressErrorRendering, so a syntax error inside
+    // render() would leave an orphan <div id="dmmd-..."> pinned to the document
+    // — a real Mermaid failure mode. There, parse() screens the source first.
+    // Major 11 honors the flag (set in baseConfig): render() cleans up its temp
+    // elements and rethrows, so the same source parses once instead of twice.
+    if (major !== '11') await mermaid.parse(trimmed);
 
     return mermaid.render(nextId(), trimmed);
   });

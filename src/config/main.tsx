@@ -205,6 +205,18 @@ function Panel({ initial }: { initial: InitialConfig }) {
   const [height, setHeight] = useState(normalizeHeight(initial.height));
 
   const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
+  // The full input tuple the last ready preview rendered from, written in the
+  // same tick as its setPreview. save() reuses the SVG when its own inputs
+  // match, sparing one of the two save-time renders; keying on the whole tuple
+  // (not just theme) is what makes an edit-then-quick-save reuse impossible to
+  // get wrong — any drift falls back to a fresh render.
+  const previewRender = useRef<{
+    source: string;
+    mermaidVersion: string;
+    theme: string;
+    useMaxWidth: boolean;
+    svg: string;
+  } | null>(null);
   // Whether Tab has been pressed in the source editor yet, which is when the
   // "how to get out" hint stops being noise and starts being the answer.
   const [tabCaptured, setTabCaptured] = useState(false);
@@ -394,13 +406,23 @@ function Panel({ initial }: { initial: InitialConfig }) {
         return;
       }
       try {
+        const resolvedTheme = resolveTheme(theme);
         const { svg } = await renderDiagram({
           source,
           versionPref: mermaidVersion,
-          theme: resolveTheme(theme),
+          theme: resolvedTheme,
           useMaxWidth,
         });
-        if (!cancelled) setPreview({ status: 'ready', svg });
+        if (!cancelled) {
+          previewRender.current = {
+            source,
+            mermaidVersion,
+            theme: resolvedTheme,
+            useMaxWidth,
+            svg,
+          };
+          setPreview({ status: 'ready', svg });
+        }
       } catch (err) {
         if (!cancelled) setPreview({ status: 'error', ...describeError(err) });
       }
@@ -424,26 +446,40 @@ function Panel({ initial }: { initial: InitialConfig }) {
   // throws, persist the source alone and let readers render on view. Oversized
   // variants are dropped by buildCacheFields so a big diagram still saves.
   //
-  // These two renders MUST be sequential, not Promise.all: Mermaid is a global
-  // singleton whose theme is set by initialize(). Run in parallel, the two
-  // initialize() calls race and the last one wins, so both SVGs come out in the
-  // same theme. Awaiting one full render before starting the next keeps them
-  // distinct.
+  // The two renders stay sequential even though render.js now serializes the
+  // Mermaid singleton internally: awaiting one before the other keeps the
+  // theme pairing obvious here and costs nothing. The preview has usually just
+  // rendered one of the two variants from these exact inputs, so that leg is
+  // reused instead of re-rendered.
   const save = async () => {
+    const previewSvgFor = (renderTheme: string) => {
+      const prev = previewRender.current;
+      return prev &&
+        prev.source === source &&
+        prev.mermaidVersion === mermaidVersion &&
+        prev.useMaxWidth === useMaxWidth &&
+        prev.theme === renderTheme
+        ? { svg: prev.svg }
+        : null;
+    };
     let cacheFields = { cacheV: CACHE_VERSION };
     try {
-      const light = await renderDiagram({
-        source,
-        versionPref: mermaidVersion,
-        theme: 'light',
-        useMaxWidth,
-      });
-      const dark = await renderDiagram({
-        source,
-        versionPref: mermaidVersion,
-        theme: 'dark',
-        useMaxWidth,
-      });
+      const light =
+        previewSvgFor('light') ??
+        (await renderDiagram({
+          source,
+          versionPref: mermaidVersion,
+          theme: 'light',
+          useMaxWidth,
+        }));
+      const dark =
+        previewSvgFor('dark') ??
+        (await renderDiagram({
+          source,
+          versionPref: mermaidVersion,
+          theme: 'dark',
+          useMaxWidth,
+        }));
       // Stamp the semver that just did the rendering. Read here rather than in
       // the view, because this build is the one holding the renderer; a reader
       // opening the page years later has a different bundle and no way to know.

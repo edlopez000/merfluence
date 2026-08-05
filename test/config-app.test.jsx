@@ -463,37 +463,22 @@ describe('auto-fit in the preview', () => {
 });
 
 describe('save', () => {
-  it('renders dark only after light resolves (sequential, not Promise.all)', async () => {
+  it('reuses the preview render for its theme and renders only the other', async () => {
     await mountConfig();
     await waitForPreview();
-
-    // Swap in a gated implementation: the light render hangs until we release it,
-    // so if save awaited the two renders sequentially, dark cannot have started.
-    // Under Promise.all both calls would fire synchronously and dark would start
-    // immediately — which is the singleton-theme-race bug this ordering prevents.
-    let releaseLight;
-    let darkStarted = false;
-    h.renderDiagram.mockImplementation(({ theme }) => {
-      if (theme === 'light') {
-        return new Promise((resolve) => {
-          releaseLight = () => resolve({ svg: '<svg data-theme="light"><rect/></svg>' });
-        });
-      }
-      darkStarted = true;
-      return Promise.resolve({ svg: '<svg data-theme="dark"><rect/></svg>' });
-    });
+    const previewCalls = h.renderDiagram.mock.calls.length;
 
     await act(async () => {
       fireEvent.click(saveButton());
     });
-    expect(darkStarted).toBe(false); // light is still pending
-
-    await act(async () => {
-      releaseLight();
-    });
-    expect(darkStarted).toBe(true);
-
     await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
+
+    // The preview just rendered light from these exact inputs, so save pays for
+    // exactly one more render — the dark leg.
+    const saveCalls = h.renderDiagram.mock.calls.slice(previewCalls);
+    expect(saveCalls).toHaveLength(1);
+    expect(saveCalls[0][0]).toMatchObject({ theme: 'dark' });
+
     const payload = h.submitConfig.mock.calls[0][0];
     expect(payload).toMatchObject({
       source: SOURCE,
@@ -507,6 +492,54 @@ describe('save', () => {
     });
     expect(payload.svgLight).toContain('data-theme="light"');
     expect(payload.svgDark).toContain('data-theme="dark"');
+  });
+
+  it('renders both themes fresh, sequentially, when a setting changed after the preview', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    // Gated implementation: the light render hangs until released, so if save
+    // runs its two renders sequentially, dark cannot start while light pends.
+    // Under Promise.all both would fire together — the singleton-theme-race bug
+    // this ordering (and the render.js lock beneath it) prevents.
+    let releaseLight;
+    let lightPending = false;
+    let darkStartedWhileLightPending = false;
+    h.renderDiagram.mockImplementation(({ theme }) => {
+      if (theme === 'light') {
+        lightPending = true;
+        return new Promise((resolve) => {
+          releaseLight = () => {
+            lightPending = false;
+            resolve({ svg: '<svg data-theme="light-fresh"><rect/></svg>' });
+          };
+        });
+      }
+      if (lightPending) darkStartedWhileLightPending = true;
+      return Promise.resolve({ svg: '<svg data-theme="dark-fresh"><rect/></svg>' });
+    });
+
+    // Flip a render input after the preview landed, then save before the
+    // debounce re-renders: the stored preview tuple no longer matches, so save
+    // must not trust it for either leg.
+    await act(async () => {
+      fireEvent.click(document.querySelector('.controls input[type="checkbox"]'));
+    });
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+
+    expect(releaseLight).toBeDefined(); // the light leg went to a fresh render
+    await act(async () => {
+      releaseLight();
+    });
+
+    await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
+    expect(darkStartedWhileLightPending).toBe(false);
+    const payload = h.submitConfig.mock.calls[0][0];
+    expect(payload).toMatchObject({ useMaxWidth: false, cacheV: CACHE_VERSION });
+    expect(payload.svgLight).toContain('light-fresh');
+    expect(payload.svgDark).toContain('dark-fresh');
   });
 
   it('persists source alone (no cache) when a save-time render throws', async () => {

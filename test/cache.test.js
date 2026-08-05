@@ -28,6 +28,13 @@ describe('fitsCache', () => {
     // budget, so a string of 40k 2-byte chars (80KB) must be rejected.
     expect(fitsCache('é'.repeat(40 * 1024))).toBe(false);
   });
+  it('accepts exactly at the byte budget, rejects one byte over', () => {
+    // Pins the boundary as `<=`, and — because UTF-8 bytes can never undercount
+    // UTF-16 code units — pins that the length short-circuit can't reject a
+    // string the encoder would have accepted.
+    expect(fitsCache('a'.repeat(45 * 1024))).toBe(true);
+    expect(fitsCache('a'.repeat(45 * 1024 + 1))).toBe(false);
+  });
 });
 
 describe('buildCacheFields', () => {

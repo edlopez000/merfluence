@@ -71,29 +71,43 @@ describe('initialize memoization', () => {
   });
 });
 
+describe('screening parse per major', () => {
+  it('pre-parses on major 10, where suppressErrorRendering is not honored', async () => {
+    await renderDiagram({ source: SOURCE, versionPref: '10' });
+    expect(fake.parse).toHaveBeenCalledTimes(1);
+    expect(fake.render).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the redundant pre-parse on major 11 (render parses internally)', async () => {
+    await renderDiagram({ source: SOURCE });
+    expect(fake.parse).not.toHaveBeenCalled();
+    expect(fake.render).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('the render lock', () => {
   it('holds a second render out of the critical section until the first finishes', async () => {
-    // First caller parks inside parse; the second must not even initialize
-    // until the first's render has resolved.
-    let releaseParse;
-    fake.parse.mockImplementationOnce(
+    // First caller parks inside render(); the second must not even initialize
+    // until the first has resolved.
+    let releaseRender;
+    fake.render.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          releaseParse = resolve;
+          releaseRender = () => resolve({ svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' });
         }),
     );
 
     const first = renderDiagram({ source: SOURCE, theme: 'dark' });
-    await vi.waitFor(() => expect(fake.parse).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(fake.render).toHaveBeenCalledTimes(1));
 
     const second = renderDiagram({ source: SOURCE, theme: 'light' });
     // Give the second caller every chance to run if the lock were broken.
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(fake.initialize).toHaveBeenCalledTimes(1);
     expect(fake.initialize).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'dark' }));
-    expect(fake.render).not.toHaveBeenCalled();
+    expect(fake.render).toHaveBeenCalledTimes(1);
 
-    releaseParse();
+    releaseRender();
     await first;
     await second;
 
@@ -104,7 +118,7 @@ describe('the render lock', () => {
   });
 
   it('keeps serving after a render inside the lock rejects', async () => {
-    fake.parse.mockImplementationOnce(async () => {
+    fake.render.mockImplementationOnce(async () => {
       throw new Error('bad syntax');
     });
     await expect(renderDiagram({ source: SOURCE })).rejects.toThrow('bad syntax');
