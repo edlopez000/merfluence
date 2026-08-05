@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { shrinkToFit, untransformedRect } from '../../src/lib/zoom.js';
+import { MAX_ZOOM, maxZoomFor, shrinkToFit, untransformedRect } from '../../src/lib/zoom.js';
 
 /**
  * The two DOM facts the editor preview's auto-fit rests on, which jsdom cannot
@@ -32,6 +32,7 @@ const STAGE_CSS = `
     width: auto !important;
     max-width: none !important;
   }
+  .stage.maximized { position: fixed; inset: 0; padding: 24px; box-sizing: border-box; }
 `;
 
 // A stand-in for what Mermaid emits: a viewBox, width="100%", and no height —
@@ -42,7 +43,7 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200" width
 let mounted = [];
 let styleEl = null;
 
-function mount() {
+function mount(svg = SVG) {
   if (!styleEl) {
     styleEl = document.createElement('style');
     styleEl.textContent = STAGE_CSS;
@@ -50,10 +51,10 @@ function mount() {
   }
   const stage = document.createElement('div');
   stage.className = 'stage';
-  stage.innerHTML = `<div class="pan">${SVG}</div>`;
+  stage.innerHTML = `<div class="pan">${svg}</div>`;
   document.body.append(stage);
   mounted.push(stage);
-  return { stage, pan: stage.querySelector('.pan') };
+  return { stage, pan: stage.querySelector('.pan'), svg: stage.querySelector('svg') };
 }
 
 afterEach(() => {
@@ -127,6 +128,92 @@ describe('the Size preset lays out the box the fit measures', () => {
     expect(fit.zoom).toBeCloseTo(300 / 800, 5);
     expect(fit.pan.x).toBeCloseTo(125, 1);
     expect(fit.pan.y).toBeCloseTo(0, 1);
+  });
+});
+
+/**
+ * Mermaid's own output shape for a wide diagram with useMaxWidth on: a viewBox
+ * carrying the intrinsic size, width="100%", and an inline max-width at that
+ * intrinsic width. 4000 wide against a 400px stage is a 10x shrink.
+ */
+const WIDE_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4000 1000" width="100%" style="max-width: 4000px;"></svg>';
+
+/** A diagram small enough that nothing shrinks it — the control. */
+const SMALL_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="100%" style="max-width: 200px;"></svg>';
+
+/** Stage.displayScale(), against real layout: laid-out width over the viewBox's. */
+function displayScale(svgEl, zoom = 1, pan = { x: 0, y: 0 }) {
+  const intrinsic = svgEl.viewBox.baseVal.width;
+  const { width } = untransformedRect({ rect: svgEl.getBoundingClientRect(), zoom, pan });
+  return width / intrinsic;
+}
+
+describe('the zoom ceiling on a diagram CSS has shrunk', () => {
+  it('raises the ceiling inline, where a flat 400% would not reach 1:1', async () => {
+    const { svg } = mount(WIDE_SVG);
+    await frames(1);
+
+    // The DOM fact jsdom cannot reach: a 4000px diagram really is laid out at a
+    // fraction of its size in this column, so every zoom multiplies a box an
+    // order of magnitude smaller than the diagram's own pixels.
+    const scale = displayScale(svg);
+    expect(scale).toBeLessThan(0.2);
+
+    // The bug, stated as an assertion: at the old flat cap the user tops out
+    // well below the diagram's own pixels — 0.4x, i.e. unreadable text.
+    expect(scale * MAX_ZOOM).toBeLessThan(1);
+
+    // The fix: the ceiling scales with the shrink, so 400% of the diagram's real
+    // size is always reachable.
+    const ceiling = maxZoomFor(scale);
+    expect(ceiling).toBeGreaterThan(MAX_ZOOM);
+    expect(scale * ceiling).toBeCloseTo(MAX_ZOOM, 5);
+  });
+
+  it('still raises it while maximized — fullscreen is not a workaround', async () => {
+    const { stage, svg } = mount(WIDE_SVG);
+    stage.classList.add('maximized');
+    await frames(2);
+
+    // Maximized, the stage is the viewport, but the unconditional max-width
+    // rules still apply, so the diagram is shrunk to the *screen* width instead
+    // of the column. Going fullscreen buys the ratio between the two and no
+    // more — which is exactly the reported symptom.
+    const scale = displayScale(svg);
+    expect(scale).toBeLessThan(1);
+    expect(scale * MAX_ZOOM).toBeLessThan(MAX_ZOOM);
+
+    const ceiling = maxZoomFor(scale);
+    expect(ceiling).toBeGreaterThan(MAX_ZOOM);
+    expect(scale * ceiling).toBeCloseTo(MAX_ZOOM, 5);
+  });
+
+  it('leaves an unshrunk diagram on the flat 400%, inline and maximized', async () => {
+    const { stage, svg } = mount(SMALL_SVG);
+    await frames(1);
+
+    expect(displayScale(svg)).toBeCloseTo(1, 5);
+    expect(maxZoomFor(displayScale(svg))).toBe(MAX_ZOOM);
+
+    stage.classList.add('maximized');
+    await frames(2);
+    expect(maxZoomFor(displayScale(svg))).toBe(MAX_ZOOM);
+  });
+
+  it('measures the same scale through a live transform', async () => {
+    const { pan, svg } = mount(WIDE_SVG);
+    await frames(1);
+    const before = displayScale(svg);
+
+    // A zoom is already applied when the next gesture measures, so the reading
+    // has to be transform-invariant or the ceiling would drift with every press.
+    pan.style.transformOrigin = '0 0';
+    pan.style.transform = 'translate(37px, 11px) scale(2.5)';
+    await frames(2);
+
+    expect(displayScale(svg, 2.5, { x: 37, y: 11 })).toBeCloseTo(before, 5);
   });
 });
 

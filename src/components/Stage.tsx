@@ -1,6 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-import { anchoredZoom, fitView, shrinkToFit, untransformedRect } from '../lib/zoom.js';
+import {
+  ZOOM_STEP,
+  anchoredZoom,
+  fitView,
+  maxZoomFor,
+  shrinkToFit,
+  untransformedRect,
+} from '../lib/zoom.js';
 
 /**
  * The interactive diagram surface, shared by the reader view and the config
@@ -61,7 +68,7 @@ function StageToolbar({
     // and Tabbing to the toolbar would otherwise silently lose every key.
     <div className="toolbar" role="toolbar" aria-label="Diagram actions" onKeyDown={onKeyDown}>
       {extras?.({ getSvg, setFailure })}
-      <button type="button" onClick={() => onZoom(-0.2)} aria-label="Zoom out">
+      <button type="button" onClick={() => onZoom(1 / ZOOM_STEP)} aria-label="Zoom out">
         &minus;
       </button>
       <button
@@ -78,7 +85,7 @@ function StageToolbar({
       >
         {Math.round(zoom * 100)}%
       </button>
-      <button type="button" onClick={() => onZoom(0.2)} aria-label="Zoom in">
+      <button type="button" onClick={() => onZoom(ZOOM_STEP)} aria-label="Zoom in">
         +
       </button>
       <button type="button" onClick={onFullscreen}>
@@ -172,6 +179,31 @@ export function Stage({
   // refs, so the listeners bound once below can call it safely.
   const maximized = () => document.fullscreenElement === stageRef.current || fallbackRef.current;
 
+  // How much the browser has already shrunk the SVG to fit: its laid-out width
+  // over the intrinsic width in its viewBox. Mermaid's useMaxWidth and the
+  // `max-width: 100%` rules do this before any transform applies, so this is the
+  // factor the zoom ceiling has to be divided by (see maxZoomFor).
+  //
+  // Measured per gesture rather than cached, because the shrink changes under
+  // us: entering fullscreen relaxes it from the page column to the whole screen,
+  // leaving it tightens it back, and a Size preset or the full-width toggle
+  // moves it too. A live read is right at every one of those moments and needs
+  // no observer to stay in step. Falls back to 1 — i.e. the flat MAX_ZOOM —
+  // whenever there's nothing real to measure, which is also what keeps the jsdom
+  // suites on the old numbers.
+  const displayScale = () => {
+    const svgEl = stageRef.current?.querySelector('svg');
+    const intrinsic = svgEl?.viewBox?.baseVal?.width;
+    if (!svgEl || !intrinsic) return 1;
+    // The rect carries the live pan/zoom; untransformedRect divides it back out.
+    const { width } = untransformedRect({
+      rect: svgEl.getBoundingClientRect(),
+      zoom: zoomRef.current,
+      pan: panRef.current,
+    });
+    return width > 0 ? width / intrinsic : 1;
+  };
+
   // Zoom to `nextZoom` while keeping the point at client coords (anchorX,
   // anchorY) fixed, by shifting the pan. Shared by the wheel (anchor = cursor)
   // and the toolbar +/- buttons (anchor = stage centre). .pan transforms from
@@ -188,6 +220,7 @@ export function Stage({
       anchorY,
       panLeft: panRect.left,
       panTop: panRect.top,
+      maxZoom: maxZoomFor(displayScale()),
     });
     if (!next) return; // at a clamp bound; nothing to do
     // Every zoom gesture funnels through here — wheel, the toolbar +/-, the
@@ -473,11 +506,24 @@ export function Stage({
       // nothing is behind the diagram, so a plain wheel zooms like an image viewer.
       if (!maximized() && !event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      // Zoom toward the cursor.
-      zoomTo(zoomRef.current - event.deltaY * 0.002, event.clientX, event.clientY);
+      // Zoom toward the cursor. Exponential in the delta for the same reason the
+      // buttons are multiplicative, and scaled so 100 units of wheel still means
+      // exactly one ZOOM_STEP — the gesture feels unchanged at 100%, it just no
+      // longer collapses to nothing once the zoom is large.
+      zoomTo(
+        zoomRef.current * Math.pow(ZOOM_STEP, -event.deltaY / 100),
+        event.clientX,
+        event.clientY,
+      );
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
+    // Bound once, deliberately, like the observers above: zoomTo reaches the
+    // current state through refs only, so closing over the first instance is
+    // correct. Listing it would rebind a non-passive listener on every pan frame
+    // for nothing — and the { passive: false } registration is the whole reason
+    // this listener is native rather than a React onWheel prop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Drag by tracking deltas from the pointerdown origin.
@@ -520,11 +566,13 @@ export function Stage({
   // The three actions below are shared by the toolbar buttons and the keyboard
   // handler, so both triggers stay one behaviour rather than two that drift.
 
-  // Zoom a step toward the middle of the visible diagram.
-  const zoomByStep = (delta: number) => {
+  // Zoom by a factor, toward the middle of the visible diagram. Multiplicative
+  // (see ZOOM_STEP) so one press means the same proportional change wherever in
+  // the range it lands — which is what makes the raised ceiling reachable.
+  const zoomByStep = (factor: number) => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (!rect) return;
-    zoomTo(zoomRef.current + delta, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    zoomTo(zoomRef.current * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
   };
 
   // Move the view by a client-px delta. Shared by the arrow keys so all four
@@ -606,11 +654,11 @@ export function Stage({
       // '=' is the unshifted key '+' lives on, so both reach zoom in.
       case '+':
       case '=':
-        zoomByStep(0.2);
+        zoomByStep(ZOOM_STEP);
         break;
       case '-':
       case '_':
-        zoomByStep(-0.2);
+        zoomByStep(1 / ZOOM_STEP);
         break;
       case '0':
         resetView();
