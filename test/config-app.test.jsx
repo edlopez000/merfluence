@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, waitFor } from '@testing-library/react';
 import { TEMPLATES } from '../src/lib/templates.js';
+import { LiveUrlError } from '../src/lib/live-url.js';
 import { CACHE_VERSION } from '../src/lib/cache.js';
 import { resolvedVersion } from '../src/lib/mermaid-registry.js';
 
@@ -21,6 +22,7 @@ const h = vi.hoisted(() => ({
   submitConfig: vi.fn(),
   closeConfig: vi.fn(),
   renderDiagram: vi.fn(),
+  decodeLiveUrl: vi.fn(),
 }));
 
 vi.mock('../src/lib/host.js', () => ({
@@ -34,6 +36,17 @@ vi.mock('../src/lib/host.js', () => ({
 vi.mock('../src/lib/render.js', async (importActual) => {
   const actual = await importActual();
   return { ...actual, renderDiagram: h.renderDiagram };
+});
+
+vi.mock('../src/lib/live-url.js', async (importActual) => {
+  // isMermaidLiveUrl and LiveUrlError stay real — URL parsing and a class,
+  // both of which jsdom can run. decodeLiveUrl is the DecompressionStream path,
+  // which jsdom does not implement, so it is stubbed the same way renderDiagram
+  // is: the decoder itself is proven in test/browser/live-url.test.js, where it
+  // can actually run (Chromium), and this file proves the wiring around it —
+  // including that the panel only prints LiveUrlError messages.
+  const actual = await importActual();
+  return { ...actual, decodeLiveUrl: h.decodeLiveUrl };
 });
 
 const SOURCE = 'flowchart TD\n A-->B';
@@ -133,6 +146,9 @@ beforeEach(() => {
   h.renderDiagram.mockImplementation(async ({ theme }) => ({
     svg: `<svg xmlns="http://www.w3.org/2000/svg" data-theme="${theme}"><rect width="10" height="10"/></svg>`,
   }));
+  // Default: a mermaid.live URL decodes cleanly to a distinctive source, so the
+  // paste/drop tests can tell the imported diagram from the seeded SOURCE.
+  h.decodeLiveUrl.mockResolvedValue('flowchart TD\n  X[from live] --> Y');
 });
 
 afterEach(() => {
@@ -585,6 +601,306 @@ describe('drag-drop', () => {
       const alert = document.querySelector('.diagnostic[role="alert"]');
       expect(alert?.textContent).toMatch(/no ```?mermaid code block/i);
     });
+  });
+});
+
+// --- Mermaid Live editor import (issue #106) --------------------------------
+// decodeLiveUrl is stubbed (DecompressionStream is not in jsdom — the decoder
+// is proven in the browser project); isMermaidLiveUrl stays real. What these
+// prove is the editing wiring: a paste or a text/uri-list drop of a mermaid.live
+// link reaches the decoder and the decoded source fills the editor preview, and
+// anything that is not one of those links either falls through to normal paste
+// or surfaces the dropError. "Not fetched" is asserted via a fetch stub in
+// every case — the whole feature exists because the fragment needs no network.
+
+function firePaste(text) {
+  // CodeMirror's own paste handling lives inside .cm-content and reads
+  // clipboardData; this synthetic event carries it, and dispatching on the
+  // .editor wrapper runs the document-level capture listener that guards it.
+  const clipboardData = { getData: (type) => (type === 'text/plain' ? text : '') };
+  const ev = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'clipboardData', { value: clipboardData, configurable: true });
+  document.querySelector('.editor').dispatchEvent(ev);
+}
+
+/**
+ * Drag a hyperlink onto `selector` (the editor by default). Same shape as the
+ * file-drag helper: a text/uri-list drag carries no files, only the URI types
+ * and data the Panel reads. Dispatched on a real element rather than on window,
+ * because where the link lands decides what happens — the window capture
+ * listeners still see it on the way down.
+ *
+ * Returns the dragover and drop events, because `defaultPrevented` is the
+ * assertion that matters for a link the panel does not import: preventing it is
+ * what stops the browser navigating the config iframe to that URL and taking
+ * the unsaved diagram with it, and leaving the drop alone is what lets
+ * CodeMirror insert the URL as text. dragover is fired for real here rather
+ * than skipped, because preventing it is also what makes the drop event happen
+ * at all — an unclaimed dragover means the browser navigates and no drop
+ * handler ever runs.
+ */
+function fireUriDrop(uri, selector = '.editor') {
+  const dataTransfer = {
+    types: ['text/uri-list'],
+    dropEffect: '',
+    files: [],
+    getData: (type) => (type === 'text/uri-list' ? uri : ''),
+  };
+  const target = document.querySelector(selector);
+  const fired = {};
+  for (const type of ['dragenter', 'dragover', 'drop']) {
+    const ev = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: dataTransfer, configurable: true });
+    target.dispatchEvent(ev);
+    fired[type] = ev;
+  }
+  return fired;
+}
+
+const LIVE_URL = 'https://mermaid.live/edit#pako:eJxLrMgsKCj2AAr8AK4T';
+
+describe('mermaid.live import', () => {
+  let fetchSpy;
+  beforeEach(() => {
+    // Prove the no-network invariant at the wiring boundary: nothing in the
+    // editor may fetch the URL it was handed. Stubbed to fail loudly if called.
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('pastes a mermaid.live URL into the editor source', async () => {
+    await mountConfig();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    await act(async () => {
+      firePaste(LIVE_URL);
+    });
+
+    await waitFor(() => expect(h.decodeLiveUrl).toHaveBeenCalledWith(LIVE_URL));
+    // The decoded source flows into the same debounced preview as typed source.
+    await waitFor(() =>
+      expect(h.renderDiagram).toHaveBeenCalledWith(
+        expect.objectContaining({ source: 'flowchart TD\n  X[from live] --> Y' }),
+      ),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('drags a mermaid.live link onto the editor via the same path', async () => {
+    await mountConfig();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    await act(async () => {
+      fireUriDrop(LIVE_URL);
+    });
+
+    await waitFor(() => expect(h.decodeLiveUrl).toHaveBeenCalledWith(LIVE_URL));
+    await waitFor(() =>
+      expect(h.renderDiagram).toHaveBeenCalledWith(
+        expect.objectContaining({ source: 'flowchart TD\n  X[from live] --> Y' }),
+      ),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an error when a mermaid.live link can't be decoded", async () => {
+    h.decodeLiveUrl.mockRejectedValue(new LiveUrlError("Couldn't decode that Mermaid Live link."));
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      firePaste(LIVE_URL);
+    });
+
+    await waitFor(() => {
+      const alert = document.querySelector('.diagnostic[role="alert"]');
+      expect(alert?.textContent).toMatch(/couldn't decode that mermaid live link/i);
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("passes the decoder's own message through, so an empty link says so", async () => {
+    // A link that decodes to an empty diagram is a different problem from a
+    // corrupt one, and the decoder words it that way; flattening both into
+    // "couldn't decode" would tell the user to check the wrong thing.
+    h.decodeLiveUrl.mockRejectedValue(
+      new LiveUrlError('That Mermaid Live link has no diagram in it.'),
+    );
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      firePaste(LIVE_URL);
+    });
+
+    await waitFor(() => {
+      const alert = document.querySelector('.diagnostic[role="alert"]');
+      expect(alert?.textContent).toMatch(/no diagram in it/i);
+    });
+  });
+
+  it('falls back to the generic message when a failure carries none', async () => {
+    h.decodeLiveUrl.mockRejectedValue(new LiveUrlError(''));
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      firePaste(LIVE_URL);
+    });
+
+    await waitFor(() => {
+      const alert = document.querySelector('.diagnostic[role="alert"]');
+      expect(alert?.textContent).toMatch(/couldn't decode that mermaid live link/i);
+    });
+  });
+
+  it('never shows the text of an error that merely escaped the decoder', async () => {
+    // Only LiveUrlError messages are copy chosen for this panel. A bug escaping
+    // the decoder still has to be reported, but its internal wording is not
+    // something to hand the user.
+    h.decodeLiveUrl.mockRejectedValue(new TypeError('x.slice is not a function'));
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      firePaste(LIVE_URL);
+    });
+
+    await waitFor(() => {
+      const alert = document.querySelector('.diagnostic[role="alert"]');
+      expect(alert?.textContent).toMatch(/couldn't decode that mermaid live link/i);
+    });
+    expect(document.querySelector('.diagnostic[role="alert"]').textContent).not.toMatch(/slice/i);
+  });
+
+  it('leaves a non-mermaid.live link dropped on the editor to CodeMirror', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    let fired;
+    await act(async () => {
+      fired = fireUriDrop('https://evil.example/diagram.mmd');
+    });
+
+    // The drop is not prevented: CodeMirror's own drop handler inserts the URL
+    // as text, which is how a `click A href "…"` target gets written. Claiming
+    // it to answer with an error would take that away — and the URL is not
+    // fetched either way, which is the part that matters.
+    expect(fired.drop.defaultPrevented).toBe(false);
+    expect(h.decodeLiveUrl).not.toHaveBeenCalled();
+    expect(document.querySelector('.diagnostic[role="alert"]')).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('lets a link drag that carries no URI fall through untouched', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    let fired;
+    await act(async () => {
+      fired = fireUriDrop('');
+    });
+
+    // Nothing to import and nothing to complain about: over the editor this is
+    // CodeMirror's drop, whatever it turns out to hold.
+    expect(fired.drop.defaultPrevented).toBe(false);
+    expect(document.querySelector('.diagnostic[role="alert"]')).toBeNull();
+    expect(h.decodeLiveUrl).not.toHaveBeenCalled();
+  });
+
+  it('swallows a link dropped outside the editor so the frame cannot navigate', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    let fired;
+    await act(async () => {
+      fired = fireUriDrop('https://example.com/page', '.controls');
+    });
+
+    // The default action for a link dropped on a page is to navigate to it, and
+    // this page is the config iframe — navigating it would throw away the
+    // diagram being edited, unsaved. Both halves of the gesture are refused:
+    // dragover, or the browser navigates before a drop event ever fires, and
+    // the drop itself. Only the editor is an import target, though, so nothing
+    // is imported and nothing is said — dragging a link onto the settings row
+    // was never an import gesture.
+    expect(fired.dragover.defaultPrevented).toBe(true);
+    expect(fired.drop.defaultPrevented).toBe(true);
+    expect(h.decodeLiveUrl).not.toHaveBeenCalled();
+    expect(document.querySelector('.diagnostic[role="alert"]')).toBeNull();
+    expect(document.querySelector('.drop-overlay')).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('lets ordinary pasted text fall through to normal editing', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      firePaste('flowchart TD\n  A --> B');
+    });
+
+    // Not a mermaid.live URL, so the intercept handler stands down.
+    expect(h.decodeLiveUrl).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('lets text that merely contains a live link paste as text', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      firePaste(`flowchart TD\n  A-->B\n  click A href "${LIVE_URL}"`);
+    });
+
+    // Pasting a diagram that cites a Live link must not replace the document
+    // with whatever that link holds — the paste belongs to CodeMirror.
+    expect(h.decodeLiveUrl).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('drops a decode that lands after the source has moved on', async () => {
+    // The decode is async, so a slow one can resolve long after the user gave
+    // up waiting and did something else. It must not overwrite what they did.
+    let resolveDecode;
+    h.decodeLiveUrl.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDecode = resolve;
+      }),
+    );
+    await mountConfig();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    await act(async () => {
+      firePaste(LIVE_URL);
+    });
+    await waitFor(() => expect(h.decodeLiveUrl).toHaveBeenCalledWith(LIVE_URL));
+
+    const template = TEMPLATES[1];
+    await act(async () => {
+      fireEvent.change(selectByLabel('Start from'), { target: { value: template.id } });
+    });
+    await waitFor(() =>
+      expect(h.renderDiagram).toHaveBeenCalledWith(
+        expect.objectContaining({ source: template.source }),
+      ),
+    );
+    h.renderDiagram.mockClear();
+
+    await act(async () => {
+      resolveDecode('flowchart TD\n  X[from live] --> Y');
+    });
+
+    // The template the user picked stands; the stale decode is discarded, and
+    // nothing re-renders behind their back.
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+    expect(document.querySelector('.diagnostic[role="alert"]')).toBeNull();
   });
 });
 

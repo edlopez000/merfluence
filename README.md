@@ -30,6 +30,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 - All major Mermaid diagram types — flowcharts, sequence, class, state, entity-relationship, Gantt, pie, mindmap, timeline, user journey, Git graph, quadrant, XY, Sankey, C4, block, kanban, architecture, and more, each with a starter template
 - A live editor with syntax highlighting, starter templates, and inline error reporting
 - Drag and drop a `.mmd` file, or a Markdown file containing a ` ```mermaid ` block, straight onto the editor
+- Import a diagram from a [Mermaid Live Editor](https://mermaid.live) link by pasting or dragging it onto the editor — the source travels in the link's `#pako:` / `#base64:` fragment, so it is decoded in your browser and nothing is ever fetched
 - Automatic light/dark theming that follows Confluence
 - A per-diagram display size (Small, Medium, or Large), or the diagram's natural size
 - Pan, zoom, and fullscreen navigation, with export to SVG or PNG
@@ -50,7 +51,7 @@ See [Development](#development) to build and deploy your own instance.
 ## Usage
 
 1. On a Confluence page, type `/mermaid` and insert the **Merfluence** macro.
-2. Write Mermaid in the editor, start from a template, or drag in a `.mmd`/Markdown file — the preview updates as you type.
+2. Write Mermaid in the editor, start from a template, drag in a `.mmd`/Markdown file, or paste a Mermaid Live Editor link — the preview updates as you type.
 3. Optionally set the display size, theme, or pinned Mermaid version, then **Save diagram**.
 4. Readers see the rendered diagram with pan, zoom, fullscreen, and SVG/PNG export.
 
@@ -172,6 +173,7 @@ src/lib/
   host.js               @forge/bridge wrappers and theme resolution
   cache.js              SVG cache shape and size gate
   mermaid-file.js       Extract Mermaid from dropped .mmd / Markdown files
+  live-url.js           Decode a mermaid.live link's fragment (no network)
   templates.js          Starter diagrams
   sizing.js             Diagram height presets (Natural/S/M/L)
   zoom.js               Cursor- and centre-anchored zoom math
