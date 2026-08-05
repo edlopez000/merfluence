@@ -242,6 +242,50 @@ let seq = 0;
 const nextId = () => `mmd-${Date.now().toString(36)}-${seq++}`;
 
 /**
+ * Each loaded Mermaid major is a stateful singleton: initialize() writes site
+ * config that the parse/render calls after it read back. Two callers whose
+ * awaits interleave — the editor's debounced preview against save() is the real
+ * case — can therefore render under the *other* caller's theme, which is the
+ * exact bug class behind the CACHE_VERSION v1→v2 bump. This chain serializes
+ * every initialize→parse→render critical section. Failures are absorbed from
+ * the chain (never from the caller, who still sees the rejection) so one bad
+ * render can't wedge every render after it.
+ */
+let mermaidTurn: Promise<void> = Promise.resolve();
+
+function withMermaidLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = mermaidTurn.then(fn);
+  mermaidTurn = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+/**
+ * initialize() is not free — it rebuilds the whole theme variable set — and the
+ * preview calls it with identical settings on every debounce tick. Skip it when
+ * this major was last initialized with the same effective config. Keyed per
+ * major (each major is its own module instance with its own site config), and
+ * only sound because the lock above serializes the section between initialize
+ * and the render that depends on it.
+ */
+const lastInitByMajor = new Map<string, string>();
+
+function initializeOnce(
+  mermaid: { initialize: (config: object) => void },
+  major: string,
+  config: { theme: string; useMaxWidth: boolean },
+) {
+  // The same normalization baseConfig applies, so 'light' and 'default' share
+  // a key rather than thrashing the memo.
+  const key = `${config.theme === 'dark' ? 'dark' : 'default'}|${config.useMaxWidth}`;
+  if (lastInitByMajor.get(major) === key) return;
+  mermaid.initialize(baseConfig(config));
+  lastInitByMajor.set(major, key);
+}
+
+/**
  * Mermaid's parse errors carry a line number in different shapes depending on
  * whether the grammar is jison-based (`hash.loc.first_line`) or one of the
  * newer langium parsers (line embedded in the message). Dig out whatever we
@@ -286,9 +330,11 @@ function enforceSourceLimit(source: string) {
 /** Throws on invalid syntax. Cheap enough to run on every keystroke. */
 export async function validate(source: string, versionPref = 'auto') {
   enforceSourceLimit(source);
-  const mermaid = await loadMermaid(versionPref);
-  mermaid.initialize(baseConfig({ theme: 'default', useMaxWidth: true }));
-  await mermaid.parse(source);
+  await withMermaidLock(async () => {
+    const mermaid = await loadMermaid(versionPref);
+    initializeOnce(mermaid, resolveMajor(versionPref), { theme: 'default', useMaxWidth: true });
+    await mermaid.parse(source);
+  });
 }
 
 /** @returns sanitized SVG markup */
@@ -307,17 +353,20 @@ export async function renderDiagram({
   if (!trimmed) throw new Error('Diagram is empty');
   enforceSourceLimit(trimmed);
 
-  const mermaid = await loadMermaid(versionPref);
-  mermaid.initialize(baseConfig({ theme, useMaxWidth }));
+  const { svg } = await withMermaidLock(async () => {
+    const mermaid = await loadMermaid(versionPref);
+    initializeOnce(mermaid, resolveMajor(versionPref), { theme, useMaxWidth });
 
-  // parse() first so a syntax error never leaves an orphan <div id="dmmd-...">
-  // pinned to the document, which is a real Mermaid failure mode.
-  await mermaid.parse(trimmed);
+    // parse() first so a syntax error never leaves an orphan <div id="dmmd-...">
+    // pinned to the document, which is a real Mermaid failure mode.
+    await mermaid.parse(trimmed);
 
-  const { svg } = await mermaid.render(nextId(), trimmed);
+    return mermaid.render(nextId(), trimmed);
+  });
   // Name the graphic before sanitizing, so DOMPurify stays the last pass over
   // anything that reaches a reader's DOM. The cache path in the view runs the
-  // same two steps in the same order.
+  // same two steps in the same order. Both are pure string work on the produced
+  // SVG, so they run outside the lock.
   return { svg: sanitizeSvg(ensureAccessibleName(svg)), major: resolveMajor(versionPref) };
 }
 

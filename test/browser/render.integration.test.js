@@ -243,6 +243,40 @@ describe('parse-before-render invariant', () => {
   });
 });
 
+describe('concurrent renders on the shared mermaid singleton', () => {
+  // initialize() writes module-global config that the render after it reads
+  // back, so interleaved callers (the editor's live preview against save())
+  // could produce an SVG themed for the *other* caller — the bug class behind
+  // the CACHE_VERSION v1→v2 bump. render.js serializes the critical section;
+  // this proves it on real renders. The ordering itself is unit-tested in
+  // test/render-lock.test.js.
+
+  /** The diagram's theme CSS with its per-render id normalized away. */
+  function themeCss(svg) {
+    const style = mount(svg).querySelector('style');
+    return (style?.textContent ?? '').replace(/mmd-[a-z0-9]+-\d+/g, 'ID');
+  }
+
+  it(
+    'concurrent light and dark renders each keep their own theme',
+    async () => {
+      const source = fixtures.flowchart;
+      // Sequential references first — and prove the probe distinguishes them.
+      const light = themeCss((await renderDiagram({ source, theme: 'light' })).svg);
+      const dark = themeCss((await renderDiagram({ source, theme: 'dark' })).svg);
+      expect(dark).not.toBe(light);
+
+      const [a, b] = await Promise.all([
+        renderDiagram({ source, theme: 'light' }),
+        renderDiagram({ source, theme: 'dark' }),
+      ]);
+      expect(themeCss(a.svg)).toBe(light);
+      expect(themeCss(b.svg)).toBe(dark);
+    },
+    RENDER_TIMEOUT,
+  );
+});
+
 describe('cache re-sanitize boundary', () => {
   // The view re-runs cached SVG (from macro config, an untrusted boundary)
   // through sanitizeSvg before injecting. Prove a tampered cache string comes
