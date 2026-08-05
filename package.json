@@ -10,7 +10,7 @@
   "scripts": {
     "build:view": "vite build --config vite.view.config.js",
     "build:config": "vite build --config vite.config.config.js",
-    "build": "npm run build:view && npm run build:config",
+    "build": "npm run build:view & V=$!; npm run build:config & C=$!; wait $V && wait $C",
     "dev:view": "vite --config vite.view.config.js",
     "dev:config": "vite --config vite.config.config.js",
     "test": "vitest run",
@@ -46,7 +46,6 @@
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.36.1",
     "@forge/bridge": "^4.0.0",
-    "codemirror": "^6.0.1",
     "dompurify": "^3.2.3",
     "mermaid": "^11.4.1",
     "mermaid-10": "npm:mermaid@^10.9.3",
