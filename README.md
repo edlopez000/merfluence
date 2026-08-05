@@ -128,6 +128,8 @@ These are not three interchangeable walls. The first two are Mermaid settings th
 
 Stated plainly, the residual trust is DOMPurify itself and the SVG profile it is configured with (`USE_PROFILES: { svg, svgFilters }`), whose allow-list decides what survives. Defense in depth, then — each layer makes the next one's job smaller, and a break in any one of them is worth reporting even if the others happen to contain it.
 
+For the supply chain behind the bundle rather than the code inside it, every tagged release carries a [CycloneDX SBOM](SECURITY.md#supply-chain) of its production dependencies — every component, version, and licence — as a Release asset.
+
 The formal statement of all this is the [privacy policy](https://edwardlopez.dev/privacy). To report something that undermines any of the claims above, follow [SECURITY.md](SECURITY.md) — privately, please, not in a public issue.
 
 ## How it works

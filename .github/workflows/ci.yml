@@ -187,6 +187,10 @@ jobs:
       - name: Prettier
         run: npm run format:check
 
+  # Two supply-chain questions, one npm ci: what is broken (audit) and what is
+  # here (SBOM). The job NAME is load-bearing — "Dependency audit" is a required
+  # status check in the repo ruleset, matched by name, so renaming it silently
+  # blocks every PR on a check that never reports. Widen the steps, not the name.
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
@@ -210,6 +214,30 @@ jobs:
       # tooling (vitest/vite/esbuild/@forge/cli) can't reach the deployed
       # Forge artifact.
       - run: npm audit --omit=dev --audit-level=high
+      # The audit answers "does the tree have known CVEs?"; the SBOM answers
+      # "what is in the tree, and under what licence?" — the machine-readable
+      # inventory a downstream scanner ingests without re-resolving our deps.
+      # Same `--omit dev` boundary as the audit above, for the same reason: only
+      # the runtime bundle reaches a customer's browser.
+      #
+      # It is generated from the installed tree rather than --package-lock-only
+      # because barely half of package-lock.json's entries carry a `license`
+      # field. Reading each installed package's own package.json is what makes
+      # the licence column complete.
+      #
+      # This runs on PRs too, unuploaded: the release job in release-please.yml
+      # is the only thing that publishes an SBOM, and it runs post-merge where a
+      # broken generator would be found far too late.
+      - name: Generate SBOM
+        run: npm run sbom
+      - name: Upload SBOM
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 14
 
   size:
     name: Bundle size budget

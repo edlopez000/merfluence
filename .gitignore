@@ -10,6 +10,12 @@ dist/
 # Test coverage output
 coverage/
 
+# CycloneDX SBOM — rebuilt from the installed tree by `npm run sbom`, published
+# as a GitHub Release asset. Committing it would add lockfile-sized churn to
+# every dependency PR for a file any checkout can reproduce exactly.
+sbom.cdx.json
+merfluence-*.cdx.json
+
 # Vitest browser-mode artifacts (attachments + failure screenshots)
 .vitest-attachments/
 __screenshots__/

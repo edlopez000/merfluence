@@ -93,3 +93,32 @@ Anything that breaks one of those claims, including:
   only the runtime bundle ships. This is why CI audits with `--omit=dev`.
 - Denial of service achieved by authoring a pathological diagram, which mainly
   affects the author's own page.
+
+## Supply chain
+
+Every tagged release carries a **CycloneDX 1.6 JSON SBOM** as a GitHub Release
+asset, named `merfluence-X.Y.Z.cdx.json`. It lists every production dependency
+resolved at that tag — name, version, [PURL](https://github.com/package-url/purl-spec),
+integrity hash, declared licence — plus the dependency graph between them, so a
+scanner can answer "are we exposed to CVE-x?" without re-resolving our tree.
+
+Its boundary is the same `--omit dev` line the audit draws, and for the same
+reason: dev-only tooling never reaches a customer's browser, so listing it would
+pad the inventory with components that are not, in any meaningful sense, part of
+the shipped product. Regenerate it from any checkout with `npm run sbom`; it is
+built from an installed tree rather than the lockfile alone, because the lockfile
+records a licence for only about half its entries.
+
+Alongside it, CI enforces on every pull request:
+
+- `npm audit --omit=dev --audit-level=high` — no known high or critical
+  advisories in the shipping tree.
+- [Dependency Review](.github/workflows/dependency-review.yml) — blocks a newly
+  introduced high-severity advisory, and denies copyleft licences (GPL, LGPL,
+  AGPL, SSPL, BUSL) before they enter the tree the SBOM then enumerates.
+- [CodeQL](.github/workflows/codeql.yml) and
+  [OpenSSF Scorecard](.github/workflows/scorecard.yml).
+
+Dependency updates arrive through Renovate with a 14-day `minimumReleaseAge`
+cooldown, so a compromised release has to survive two weeks of public scrutiny
+before it is proposed here. Security fixes bypass the cooldown.
