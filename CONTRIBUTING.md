@@ -117,6 +117,9 @@ the version or edit the changelog by hand:
    release.
 3. A maintainer merges that release PR. release-please then tags `vX.Y.Z`, cuts a
    GitHub Release, and commits the updated [CHANGELOG.md](CHANGELOG.md).
+4. A follow-on job attaches `merfluence-X.Y.Z.cdx.json` — a CycloneDX SBOM of the
+   production dependency tree at that tag — to the Release. Reproduce it from any
+   checkout with `npm run sbom`; see [SECURITY.md](SECURITY.md#supply-chain).
 
 Versioning is intentionally **decoupled from deployment**: Forge manifests carry
 no version, so the deploy pipeline in
