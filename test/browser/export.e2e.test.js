@@ -64,6 +64,39 @@ describe('exportPng', () => {
   });
 });
 
+describe('exportPng is zoom-independent', () => {
+  // The reader's SVG lives inside the Stage's pan layer, which carries
+  // `translate(pan) scale(zoom)`. Measuring the on-screen rect would multiply
+  // the interactive zoom into the canvas: a 400% view quadruples each PNG axis
+  // (16x the backing store), and past the browser's canvas ceiling the export
+  // silently comes out blank. The export must be the diagram's own size.
+  async function exportedSize(zoom) {
+    const { svg } = await renderDiagram({ source: 'flowchart TD\n  A --> B', theme: 'light' });
+    const host = document.createElement('div');
+    host.innerHTML = svg;
+    // The same transform shape Stage puts on .pan.
+    host.style.transform = `scale(${zoom})`;
+    host.style.transformOrigin = '0 0';
+    document.body.appendChild(host);
+    mounted.push(host);
+
+    await exportPng(host.querySelector('svg'));
+    const blob = createSpy.mock.calls.at(-1)[0];
+    const bitmap = await createImageBitmap(blob);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return size;
+  }
+
+  it('exports the same pixel size at 400% zoom as at 100%', async () => {
+    const at100 = await exportedSize(1);
+    const at400 = await exportedSize(4);
+    expect(at100.width).toBeGreaterThan(0);
+    expect(at100.height).toBeGreaterThan(0);
+    expect(at400).toEqual(at100);
+  });
+});
+
 describe('download', () => {
   it('turns a blob into an anchor click and revokes the object URL', () => {
     const blob = new Blob(['<svg></svg>'], { type: 'image/svg+xml' });
