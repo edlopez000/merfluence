@@ -154,7 +154,15 @@ export function Stage({
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const panRef = useRef(pan);
-  panRef.current = pan;
+  // A drag writes the transform straight to the DOM and leaves React state
+  // behind until it ends (see handleMove), so for its duration the ref is the
+  // authority and must not be reset from the stale state value.
+  if (!drag.current) panRef.current = pan;
+
+  // The transformed layer, so a drag can move it without a re-render.
+  const panElRef = useRef<HTMLDivElement | null>(null);
+  const transformFor = (z: number, p: { x: number; y: number }) =>
+    `translate(${p.x}px, ${p.y}px) scale(${z})`;
   // Same reason: the observers below are bound once, so they'd close over the
   // prop's first value.
   const autoFitRef = useRef(autoFit);
@@ -167,6 +175,16 @@ export function Stage({
   // One-shot: skip the next content observation because we caused it ourselves
   // by leaving maximize. See exitMaximized.
   const skipNextContentFit = useRef(false);
+
+  // The stage's computed padding, cached per maximized/inline state (the only
+  // thing the CSS varies it by). See measure().
+  const padding = useRef<{
+    key: string;
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  } | null>(null);
 
   // The CSS-pinned fallback for when the browser won't give us real fullscreen
   // (see enterFallback). State drives the class; the ref is what the once-bound
@@ -252,14 +270,29 @@ export function Stage({
 
     // The viewport is the stage's content box: its rect inset by the padding the
     // maximized rule adds (read, not hardcoded, so the CSS stays the one owner).
+    // Only the maximized rule changes that padding, so the computed values are
+    // cached against that state — measure() runs per ResizeObserver callback,
+    // i.e. per frame through a modal drag-resize, and getComputedStyle forces a
+    // style recalc every time it is called.
     const stageRect = stage.getBoundingClientRect();
-    const style = getComputedStyle(stage);
-    const inset = (side: string) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+    const padKey = maximized() ? 'max' : 'inline';
+    if (padding.current?.key !== padKey) {
+      const style = getComputedStyle(stage);
+      const inset = (side: string) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+      padding.current = {
+        key: padKey,
+        left: inset('left'),
+        right: inset('right'),
+        top: inset('top'),
+        bottom: inset('bottom'),
+      };
+    }
+    const pad = padding.current;
     const view = {
-      left: stageRect.left + inset('left'),
-      top: stageRect.top + inset('top'),
-      width: stageRect.width - inset('left') - inset('right'),
-      height: stageRect.height - inset('top') - inset('bottom'),
+      left: stageRect.left + pad.left,
+      top: stageRect.top + pad.top,
+      width: stageRect.width - pad.left - pad.right,
+      height: stageRect.height - pad.top - pad.bottom,
     };
 
     return { content, view };
@@ -501,23 +534,40 @@ export function Stage({
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
+    // Wheel events are not frame-aligned — a trackpad delivers well over one per
+    // frame — and each one measures two live rects immediately after the last
+    // one's transform was committed, which forces a synchronous layout every
+    // time. Accumulate instead and apply once per frame: the deltas are summed
+    // (the zoom is exponential in the total, so batching is exact) and the
+    // anchor is the newest cursor position, which is where the user's fingers
+    // actually are by the time we paint.
+    let pendingDelta = 0;
+    let anchor = { x: 0, y: 0 };
+    let frame = 0;
+    const applyWheel = () => {
+      frame = 0;
+      const delta = pendingDelta;
+      pendingDelta = 0;
+      // Zoom toward the cursor. Exponential in the delta for the same reason the
+      // buttons are multiplicative, and scaled so 100 units of wheel still means
+      // exactly one ZOOM_STEP — the gesture feels unchanged at 100%, it just no
+      // longer collapses to nothing once the zoom is large.
+      zoomTo(zoomRef.current * Math.pow(ZOOM_STEP, -delta / 100), anchor.x, anchor.y);
+    };
     const onWheel = (event: WheelEvent) => {
       // Inline: require Ctrl/⌘ so a plain scroll still moves the page. Maximized:
       // nothing is behind the diagram, so a plain wheel zooms like an image viewer.
       if (!maximized() && !event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      // Zoom toward the cursor. Exponential in the delta for the same reason the
-      // buttons are multiplicative, and scaled so 100 units of wheel still means
-      // exactly one ZOOM_STEP — the gesture feels unchanged at 100%, it just no
-      // longer collapses to nothing once the zoom is large.
-      zoomTo(
-        zoomRef.current * Math.pow(ZOOM_STEP, -event.deltaY / 100),
-        event.clientX,
-        event.clientY,
-      );
+      pendingDelta += event.deltaY;
+      anchor = { x: event.clientX, y: event.clientY };
+      frame ||= requestAnimationFrame(applyWheel);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      if (frame) cancelAnimationFrame(frame);
+    };
     // Bound once, deliberately, like the observers above: zoomTo reaches the
     // current state through refs only, so closing over the first instance is
     // correct. Listing it would rebind a non-passive listener on every pan frame
@@ -540,10 +590,18 @@ export function Stage({
       return;
     }
     userAdjusted.current = true;
-    setPan({
+    // Straight to the DOM, not through setState. A pointermove stream is one
+    // event per frame at best and several per frame on a trackpad, and each
+    // setPan re-rendered Stage and its toolbar. The ref is the live value that
+    // zoomTo/measure already read, so nothing downstream notices the
+    // difference; React state catches up once, on release (handleUp).
+    panRef.current = {
       x: drag.current.px + (event.clientX - drag.current.x),
       y: drag.current.py + (event.clientY - drag.current.y),
-    });
+    };
+    if (panElRef.current) {
+      panElRef.current.style.transform = transformFor(zoomRef.current, panRef.current);
+    }
   };
 
   const handleDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -559,8 +617,12 @@ export function Stage({
   // Called from several paths (pointerup, pointercancel, lostpointercapture, and
   // the buttons check above), so it has to be idempotent.
   const handleUp = () => {
+    const wasDragging = drag.current !== null;
     drag.current = null;
     setDragging(false);
+    // Hand the position the drag wrote straight to the DOM back to React, so
+    // state and the painted transform agree again the moment the gesture ends.
+    if (wasDragging) setPan(panRef.current);
   };
 
   // The three actions below are shared by the toolbar buttons and the keyboard
@@ -722,8 +784,9 @@ export function Stage({
       >
         <div
           className="pan"
+          ref={panElRef}
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transform: transformFor(zoom, pan),
             transformOrigin: '0 0',
           }}
           dangerouslySetInnerHTML={svgHtml}

@@ -419,6 +419,19 @@ const btnByLabel = (re) =>
 const stageEl = () => root().querySelector('.stage');
 const zoomLabel = () => root().querySelector('.zoom-level')?.textContent;
 
+/**
+ * Dispatch a wheel event and let the zoom land. Stage coalesces wheel ticks
+ * into one requestAnimationFrame — a trackpad delivers several per frame, and
+ * each one used to force a synchronous layout — so the zoom applies on the
+ * next frame rather than inside the dispatch.
+ */
+async function wheel(el, init) {
+  await act(async () => {
+    el.dispatchEvent(new WheelEvent('wheel', { cancelable: true, ...init }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+}
+
 // fullscreenElement is a getter in jsdom; redefine it so a test can pretend the
 // stage is (or isn't) the fullscreen element.
 function setFullscreen(el) {
@@ -595,17 +608,7 @@ describe('stage: wheel zoom', () => {
     await mountReady();
     expect(zoomLabel()).toBe('100%');
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', {
-          deltaY: -100,
-          ctrlKey: true,
-          clientX: 5,
-          clientY: 5,
-          cancelable: true,
-        }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 5, clientY: 5 });
 
     // 1 - (-100 * 0.002) = 1.2 -> 120%.
     expect(zoomLabel()).toBe('120%');
@@ -614,11 +617,33 @@ describe('stage: wheel zoom', () => {
   it('ignores a plain wheel (no ctrl/meta) while inline', async () => {
     await mountReady();
 
-    await act(async () => {
-      stageEl().dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true }));
-    });
+    await wheel(stageEl(), { deltaY: -100 });
 
     expect(zoomLabel()).toBe('100%');
+  });
+
+  it('applies a burst of ticks once, summing the deltas', async () => {
+    // The coalescing has to be exact, not approximate: the zoom is exponential
+    // in the total delta, so summing before applying gives the same result the
+    // per-event path did — one repaint instead of four.
+    await mountReady();
+
+    await act(async () => {
+      for (let i = 0; i < 4; i++) {
+        stageEl().dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: -25,
+            ctrlKey: true,
+            clientX: 5,
+            clientY: 5,
+            cancelable: true,
+          }),
+        );
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+
+    expect(zoomLabel()).toBe('120%'); // same as one -100 tick
   });
 });
 
@@ -657,6 +682,55 @@ describe('stage: pointer pan', () => {
     fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
     fireEvent.lostPointerCapture(stage, { pointerId: 1 });
     expect(stage.className).not.toMatch(/dragging/);
+  });
+
+  it('moves the layer without re-rendering, and hands the position back on release', async () => {
+    // A drag writes .pan's transform straight to the DOM: a pointermove stream
+    // is one event per frame at best, and re-rendering Stage and its toolbar on
+    // each was the cost. React state has to catch up on release, or the next
+    // render would snap the diagram back to where the drag started.
+    await mountReady();
+    const stage = stageEl();
+    const pan = root().querySelector('.pan');
+    const svgBefore = root().querySelector('svg');
+
+    fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
+    for (const [x, y] of [
+      [10, 5],
+      [20, 12],
+      [30, 20],
+    ]) {
+      fireEvent.pointerMove(stage, { clientX: x, clientY: y, buttons: 1 });
+    }
+    expect(pan.style.transform).toContain('translate(30px, 20px)');
+    // Same nodes throughout: nothing was re-created under the gesture.
+    expect(root().querySelector('.pan')).toBe(pan);
+    expect(root().querySelector('svg')).toBe(svgBefore);
+
+    fireEvent.pointerUp(stage, { pointerId: 1 });
+    // State now agrees with the DOM — asserted through a re-render the drag did
+    // not cause, so a state that lagged behind would show up as a snap-back.
+    await act(async () => {
+      fireEvent.keyDown(stage, { key: 'ArrowLeft' });
+    });
+    expect(pan.style.transform).toContain('translate(62px, 20px)'); // 30 + PAN_STEP
+  });
+
+  it('survives a re-render that lands mid-gesture', async () => {
+    // The gesture writes the DOM behind React's back, so a re-render arriving
+    // mid-drag must not repaint the layer from the pan state React still holds.
+    // It doesn't: React patches only the style props that changed between
+    // renders, and pan state is untouched during the drag. Pinned because the
+    // direct-DOM write depends on that.
+    await mountReady();
+    const stage = stageEl();
+
+    await act(async () => {
+      fireEvent.pointerDown(stage, { clientX: 0, clientY: 0, pointerId: 1, buttons: 1 });
+      fireEvent.pointerMove(stage, { clientX: 40, clientY: 25, buttons: 1 });
+    });
+
+    expect(root().querySelector('.pan').style.transform).toContain('translate(40px, 25px)');
   });
 });
 

@@ -166,6 +166,19 @@ async function mountConfig() {
 const saveButton = () =>
   [...document.querySelectorAll('button')].find((b) => /save diagram/i.test(b.textContent));
 
+/**
+ * Dispatch a wheel event and let the zoom land. Stage coalesces wheel ticks
+ * into one requestAnimationFrame — a trackpad delivers several per frame, and
+ * each one used to force a synchronous layout — so the zoom applies on the
+ * next frame rather than inside the dispatch.
+ */
+async function wheel(el, init) {
+  await act(async () => {
+    el.dispatchEvent(new WheelEvent('wheel', { cancelable: true, ...init }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+}
+
 // Wait for the debounced preview to land and enable the Save button.
 async function waitForPreview() {
   await waitFor(() => {
@@ -221,17 +234,7 @@ describe('interactive preview', () => {
     await mountConfig();
     await waitForPreview();
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', {
-          deltaY: -100,
-          ctrlKey: true,
-          clientX: 5,
-          clientY: 5,
-          cancelable: true,
-        }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 5, clientY: 5 });
     // 1 - (-100 * 0.002) = 1.2 -> 120%.
     expect(zoomLabel()).toBe('120%');
 
@@ -372,11 +375,7 @@ describe('auto-fit in the preview', () => {
     await waitForPreview();
     await stubRects(CLIPPED);
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 });
     expect(zoomLabel()).toBe('120%');
 
     // The pane resizing is not a reason to throw away a view they chose...
@@ -412,11 +411,7 @@ describe('auto-fit in the preview', () => {
     await fireObserver('.preview .pan');
     expect(zoomLabel()).toBe('38%');
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 });
     fireEvent.keyDown(stageEl(), { key: '0' });
 
     // 100% here would put the user straight back into the clipped view this
@@ -431,11 +426,7 @@ describe('auto-fit in the preview', () => {
     // magnifies it to 200%, auto-fit would snap it back to 100%.
     await stubRects(FITS);
 
-    await act(async () => {
-      stageEl().dispatchEvent(
-        new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }),
-      );
-    });
+    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 });
     expect(zoomLabel()).toBe('120%');
 
     // No Fullscreen API in jsdom, so this takes the CSS fallback — the path the

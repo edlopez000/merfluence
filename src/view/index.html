@@ -65,6 +65,10 @@
         width: fit-content;
         max-width: 100%;
         margin: 0 auto;
+        /* Pan/zoom writes this layer's transform every frame of a gesture.
+           Without the hint the browser re-rasterizes the whole diagram each
+           time instead of compositing a layer it already has. */
+        will-change: transform;
       }
       .stage svg {
         display: block;
