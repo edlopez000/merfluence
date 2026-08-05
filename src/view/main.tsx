@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { ensureAccessibleName } from '../lib/a11y-name.js';
-import { resolvedVersion } from '../lib/mermaid-registry.js';
+import { loadMermaid, resolvedVersion } from '../lib/mermaid-registry.js';
 import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
 import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
@@ -161,16 +161,24 @@ function App() {
   // Decide what to show *without* loading Mermaid. Empty and cache hits resolve
   // here for free; a cache miss becomes 'deferred' so the expensive render waits
   // until the macro actually scrolls into view.
+  // What the last full decide() ran with. A theme trigger that resolves to the
+  // same theme for the same config is a no-op — without this gate it would
+  // re-sanitize a cache hit into a fresh state object and, on a cache miss,
+  // kick an already-rendered diagram back to 'deferred' for a full re-render.
+  const lastDecided = useRef<{ config: DiagramConfig; theme: string } | null>(null);
+
   const decide = useCallback(() => {
     if (!config) return;
+
+    const theme = resolveTheme(config.theme);
+    if (lastDecided.current?.config === config && lastDecided.current.theme === theme) return;
+    lastDecided.current = { config, theme };
 
     const source = (config.source ?? '').trim();
     if (!source) {
       setState({ status: 'empty' });
       return;
     }
-
-    const theme = resolveTheme(config.theme);
 
     // Cache hit: the editor already rendered this diagram to SVG for this theme
     // and stored it in config. Paint it and never load Mermaid — the whole win.
@@ -200,6 +208,19 @@ function App() {
   }, [decide]);
 
   useEffect(() => onThemeChange(decide), [decide]);
+
+  // Warm the renderer while the observer below waits: the Mermaid module fetch
+  // is the long pole of a cache-miss render, and a deferred macro is going to
+  // need it the moment it scrolls in. loadMermaid caches the promise, so this
+  // overlaps the network fetch with the scroll without changing when we render
+  // — and costs nothing on the cache-hit path, which never enters 'deferred'.
+  useEffect(() => {
+    if (state.status !== 'deferred' || !config) return;
+    loadMermaid(config.mermaidVersion).catch(() => {
+      // A fetch failure surfaces from the real render below, with an error
+      // state to land in; here it would just be an unhandled rejection.
+    });
+  }, [state.status, config]);
 
   // Lazy-load trigger: only once a deferred macro is on screen do we mark it
   // visible, which kicks off the render below. rootMargin starts the load a bit

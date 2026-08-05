@@ -41,6 +41,15 @@ vi.mock('../src/lib/render.js', async (importActual) => {
   return { ...actual, renderDiagram: h.renderDiagram };
 });
 
+// Partial mock: loadMermaid would dynamically import the real ~850KB module,
+// which the speculative-warm-up assertions only need to observe, not perform.
+// resolvedVersion stays real — the version-label tests assert against it.
+const r = vi.hoisted(() => ({ loadMermaid: vi.fn() }));
+vi.mock('../src/lib/mermaid-registry.js', async (importActual) => {
+  const actual = await importActual();
+  return { ...actual, loadMermaid: r.loadMermaid };
+});
+
 // The Toolbar's export buttons call into png-export, which draws to a canvas —
 // covered directly by test/browser. Here we only need to prove the toolbar wires
 // the click to it with the stage's <svg>, so spy the two functions.
@@ -83,6 +92,7 @@ beforeEach(() => {
   h.resolveTheme.mockImplementation((pref) => (pref === 'dark' ? 'dark' : 'light'));
   p.download.mockReset();
   p.exportPng.mockReset().mockImplementation(() => Promise.resolve());
+  r.loadMermaid.mockReset().mockResolvedValue({});
   ioInstances = [];
   roInstances = [];
   globalThis.ResizeObserver = class {
@@ -324,6 +334,61 @@ describe('host theme flip', () => {
 
     expect(root().querySelector('#rect-dark')).not.toBeNull();
     expect(root().querySelector('#rect-light')).toBeNull();
+  });
+});
+
+describe('theme trigger resolving to the same theme', () => {
+  it('does not kick a freshly rendered cache miss back to deferred', async () => {
+    // The expensive case the decide() gate exists for: a cache miss that has
+    // already paid for its render must not be re-rendered — or even re-deferred
+    // — by a theme event that resolves to the theme it was rendered with
+    // (host churn, or an explicit light/dark override that ignores the host).
+    h.getConfig.mockResolvedValue({ source: 'flowchart TD\n A-->B', theme: 'light' });
+    h.renderDiagram.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect id="rect-fresh" width="10" height="10"/></svg>',
+    });
+    await mountView();
+    await act(async () => {
+      ioInstances[0].intersect();
+    });
+    expect(root().querySelector('#rect-fresh')).not.toBeNull();
+    const observersBefore = ioInstances.length;
+
+    const trigger = h.onThemeChange.mock.calls.at(-1)[0];
+    await act(async () => {
+      trigger();
+    });
+
+    // Still the same rendered diagram: one render total, no new observer bound,
+    // never back through 'deferred'.
+    expect(h.renderDiagram).toHaveBeenCalledTimes(1);
+    expect(root().querySelector('#rect-fresh')).not.toBeNull();
+    expect(ioInstances.length).toBe(observersBefore);
+  });
+});
+
+describe('speculative Mermaid warm-up', () => {
+  it('starts fetching Mermaid as soon as a miss is deferred, before visibility', async () => {
+    h.getConfig.mockResolvedValue({ source: 'flowchart TD\n A-->B', theme: 'light' });
+    await mountView();
+
+    // Deferred and off-screen: the render has not run, but the module fetch has.
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+    expect(r.loadMermaid).toHaveBeenCalledTimes(1);
+    expect(r.loadMermaid).toHaveBeenCalledWith(undefined);
+  });
+
+  it('never touches Mermaid on a cache hit', async () => {
+    h.getConfig.mockResolvedValue({
+      source: 'flowchart TD\n A-->B',
+      theme: 'light',
+      cacheV: CACHE_VERSION,
+      svgLight: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+    });
+    await mountView();
+
+    expect(r.loadMermaid).not.toHaveBeenCalled();
+    expect(h.renderDiagram).not.toHaveBeenCalled();
   });
 });
 
