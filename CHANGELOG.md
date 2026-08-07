@@ -9,6 +9,20 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.4.0](https://github.com/edlopez000/merfluence/compare/v1.3.0...v1.4.0) (2026-08-07)
+
+
+### Features
+
+* import a diagram from a Mermaid Live Editor link ([#106](https://github.com/edlopez000/merfluence/issues/106)) ([#122](https://github.com/edlopez000/merfluence/issues/122)) ([9bd9843](https://github.com/edlopez000/merfluence/commit/9bd9843ea8a725e4cb32d931ab386b9302210023))
+
+
+### Bug Fixes
+
+* avoid a quadratic trailing-whitespace strip when parsing dropped files ([#123](https://github.com/edlopez000/merfluence/issues/123)) ([d6000ee](https://github.com/edlopez000/merfluence/commit/d6000ee8ed8d9bda5611319de6c0f02e504d5c17)), closes [#95](https://github.com/edlopez000/merfluence/issues/95)
+* performance pass, plus PNG export, theme-race and editor undo fixes ([#143](https://github.com/edlopez000/merfluence/issues/143)) ([d047b10](https://github.com/edlopez000/merfluence/commit/d047b10841c944fce316cac394f04c9aff0f61be))
+* zoom to 400% of a diagram's real size, not its shrunken size ([#142](https://github.com/edlopez000/merfluence/issues/142)) ([460f901](https://github.com/edlopez000/merfluence/commit/460f901c532cc27ca9a2d317833a87b945c5b43d))
+
 ## [1.3.0](https://github.com/edlopez000/merfluence/compare/v1.2.2...v1.3.0) (2026-08-03)
 
 
