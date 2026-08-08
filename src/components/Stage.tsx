@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ZOOM_STEP,
@@ -221,6 +221,25 @@ export function Stage({
     });
     return width > 0 ? width / intrinsic : 1;
   };
+
+  // The diagram's own width, published to CSS as --diagram-width so the stage
+  // rules can give the SVG a width the browser can actually resolve. With
+  // useMaxWidth on, Mermaid writes width="100%" and keeps the real number only
+  // in an inline max-width, and a percentage resolves to nothing inside .pan's
+  // shrink-to-fit box — so every wide diagram laid out at the 300px
+  // replaced-element default instead of the column's width (issue #141).
+  //
+  // Read from the viewBox, the same source displayScale uses above, so there is
+  // one notion of "the diagram's width" rather than two that can disagree. In a
+  // layout effect because the SVG arrives as innerHTML in this same commit: this
+  // runs after that lands and before paint, so nothing is ever painted at 300px.
+  // Null wherever there is no viewBox to read — jsdom, or an SVG without one —
+  // which leaves the CSS on its 100% fallback, i.e. the old behaviour.
+  const [intrinsicWidth, setIntrinsicWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const width = stageRef.current?.querySelector('svg')?.viewBox?.baseVal?.width;
+    setIntrinsicWidth(typeof width === 'number' && width > 0 ? width : null);
+  }, [svg]);
 
   // Zoom to `nextZoom` while keeping the point at client coords (anchorX,
   // anchorY) fixed, by shifting the pan. Shared by the wheel (anchor = cursor)
@@ -747,6 +766,17 @@ export function Stage({
   // identity check do what the string compare used to.
   const svgHtml = useMemo(() => ({ __html: svg }), [svg]);
 
+  // The two measurements the stage rules read: the editor's chosen height, and
+  // the diagram's own width. Both are undefined until there is something to say,
+  // so the CSS falls back on its own rather than reading a "0px" we made up.
+  const sizeVars =
+    height || intrinsicWidth
+      ? ({
+          ...(height ? { '--diagram-height': `${height}px` } : null),
+          ...(intrinsicWidth ? { '--diagram-width': `${intrinsicWidth}px` } : null),
+        } as React.CSSProperties)
+      : undefined;
+
   return (
     <>
       {/* The .stage is a fixed clipping frame in normal flow: it establishes the
@@ -759,7 +789,7 @@ export function Stage({
         // The editor's chosen height is applied as a CSS variable the .sized
         // rules read; the SVG scales to it, keeping its aspect ratio, and the
         // existing pan/zoom reaches anything wider than the column.
-        style={height ? ({ '--diagram-height': `${height}px` } as React.CSSProperties) : undefined}
+        style={sizeVars}
         // Focusable so the diagram itself can be operated from the keyboard, with
         // the keys named in the label — there's no visible affordance to read
         // them off. role="group" rather than "application": application would

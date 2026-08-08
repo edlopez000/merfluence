@@ -5,16 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Merfluence</title>
     <style>
-      /* Sizes the body to its content instead of the iframe's default width.
-         Declared in a <style> tag, not a style="" attribute, so this alone
-         would not require the unsafe-inline permission — Mermaid's own output
-         is what requires it. */
+      /* The macro is exactly as wide as its column, never wider. A diagram that
+         does not fit is clipped by .stage's overflow: hidden and reached by
+         panning — the alternative, letting the content stretch the body, grows
+         the Forge iframe until Confluence scrolls the whole macro sideways and
+         carries the toolbar (anchored to .root's right edge) and the version
+         stamp out of view.
+
+         This is also what gives .stage a definite width, without which its
+         overflow: hidden has nothing to clip against and the diagram's own width
+         bubbles back up. Declared in a <style> tag, not a style="" attribute, so
+         this alone would not require the unsafe-inline permission — Mermaid's
+         own output is what requires it. */
       html,
       body {
         margin: 0;
         padding: 0;
-        width: fit-content;
-        min-width: 100%;
+        width: 100%;
         background: transparent;
         font-family: var(
           --ds-font-family-sans,
@@ -30,8 +37,7 @@
 
       .root {
         position: relative;
-        display: inline-block;
-        min-width: 100%;
+        width: 100%;
       }
 
       .stage {
@@ -76,37 +82,36 @@
            per frame IS the crispness; an SVG that renders as a fuzzy bitmap
            gives up the reason to ship SVG at all. */
       }
+      /* width is the fix for issue #141. With useMaxWidth on, Mermaid writes
+         width="100%" and keeps the real width only in an inline max-width — and
+         a percentage width has nothing to resolve against inside .pan's
+         shrink-to-fit box, so the SVG fell back to the replaced-element default
+         of 300x150 and the column width never reached the diagram. The variable
+         carries the viewBox's width, which Stage sets once the SVG lands (see
+         src/components/Stage.tsx); with a real width in hand, .pan's fit-content
+         resolves to the diagram's own width and max-width below clamps it to the
+         column. The 100% fallback is the old behaviour, for an SVG with no
+         viewBox to measure.
+
+         !important because that inline max-width outranks any stylesheet rule,
+         and it is the clamp that shrinks a wide diagram to the column — without
+         it the default mode would lay out at full width and clip, i.e. behave
+         like no-shrink below. Same reason the .sized rules further down need it. */
       .stage svg {
         display: block;
-        max-width: 100%;
+        width: var(--diagram-width, 100%);
+        max-width: 100% !important;
         height: auto;
       }
       .stage.no-shrink .pan {
         max-width: none;
       }
+      /* !important to beat the rule above, which now carries it. With
+         useMaxWidth off Mermaid emits explicit width/height attributes instead
+         of a percentage, so this mode always had a real width; dropping the
+         clamp is all it needs. */
       .stage.no-shrink svg {
-        max-width: none;
-      }
-
-      /* "Keep full width" with a diagram wider than the column: clip it to the
-         column and let the existing drag-pan reach the rest, rather than letting
-         it grow the macro. The body is width: fit-content, so an oversized
-         diagram otherwise stretches the whole macro past the column; the Forge
-         iframe then grows to match and Confluence scrolls the entire macro
-         horizontally — carrying the toolbar (anchored to .root's right edge) and
-         the version stamp out of view. Capping the frame to the column gives
-         .stage a definite width so its overflow: hidden actually clips; without a
-         definite width the diagram's intrinsic width bubbles up through the
-         fit-content body and re-stretches .root. Scoped with :has() so every
-         other case keeps the content-hugging fit-content sizing. */
-      html:has(.stage.no-shrink),
-      html:has(.stage.no-shrink) body {
-        width: 100%;
-      }
-      .root:has(.stage.no-shrink) {
-        display: block;
-        width: 100%;
-        min-width: 0;
+        max-width: none !important;
       }
 
       /* An explicit height chosen in the editor's Size dropdown (see SIZE_PRESETS
@@ -319,70 +324,6 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-      }
-
-      /* Export is a button that opens a small menu of formats (PNG / SVG),
-         replacing the two separate buttons. The menu is absolutely positioned so
-         it drops below without changing the toolbar's height. */
-      .export {
-        position: relative;
-        display: flex;
-      }
-      .export-menu {
-        position: absolute;
-        top: calc(100% + 4px);
-        right: 0;
-        z-index: 2;
-        display: flex;
-        flex-direction: column;
-        min-width: 100%;
-        padding: 2px;
-        border-radius: 6px;
-        background: var(--ds-surface-overlay, #fff);
-        border: 1px solid var(--ds-border, #dfe1e6);
-        box-shadow: var(--ds-shadow-overlay, 0 4px 8px rgba(9, 30, 66, 0.25));
-      }
-      .export-menu button {
-        justify-content: flex-start;
-        text-align: left;
-      }
-      /* The zoom percentage doubles as the "reset view" control (click to reset
-         zoom + pan). It inherits .toolbar button styling, including hover. */
-      .toolbar .zoom-level {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 6px 6px;
-        font-variant-numeric: tabular-nums;
-        /* 5ch, not 4: a heavily shrunk diagram now zooms past 999%, and the
-           readout is the raw transform factor, so the toolbar would reflow the
-           moment it gained a digit. */
-        min-width: 5ch;
-      }
-
-      /* Version stamp: overlaid bottom-left and revealed on hover, like the
-         toolbar, so it's there for bug reports without cluttering every diagram.
-         Absolute (not in flow) so it reserves no empty line; pointer-events none
-         so it never swallows a drag that starts over it. */
-      .meta {
-        position: absolute;
-        bottom: 4px;
-        left: 4px;
-        font-size: 11px;
-        line-height: 1;
-        color: var(--ds-text-subtlest, #626f86);
-        background: var(--ds-surface-overlay, #fff);
-        border: 1px solid var(--ds-border, #dfe1e6);
-        border-radius: 4px;
-        padding: 3px 6px;
-        opacity: 0;
-        transition: opacity 120ms ease-in;
-        pointer-events: none;
-      }
-      .root:hover .meta,
-      .toolbar:focus-within ~ .meta,
-      .root:has(.stage:focus-visible) .meta {
-        opacity: 1;
       }
 
       .message {

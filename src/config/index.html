@@ -181,9 +181,10 @@
          than extracted: the two Vite bundles have separate HTML shells, and a
          shared-CSS build step to save forty lines would cost more than it saves.
          Keep the two copies in step when either changes.
-         Deliberately NOT copied: the html:has(.stage.no-shrink) width rules,
-         which exist only to stop an oversized diagram stretching the reader's
-         auto-sizing iframe. The modal is a fixed box, so they mean nothing here. */
+         Deliberately NOT copied: the reader's html/body/.root width rules, which
+         exist only to stop an oversized diagram stretching its auto-sizing
+         iframe. The modal is a fixed box and the pane below is already definite,
+         so they would mean nothing here. */
 
       /* The stage fills the pane so there is a large surface to drag on and a
          definite box to clip against, rather than hugging the diagram the way
@@ -232,16 +233,23 @@
            magnify a cached bitmap instead of re-rendering the vector, and on a
            large diagram it stays blurry for good. */
       }
+      /* width carries the viewBox's own width, set by Stage — without it
+         Mermaid's width="100%" has nothing to resolve against inside .pan and
+         every wide diagram lays out at 300px (issue #141). max-width is
+         !important because Mermaid's inline max-width outranks a stylesheet
+         rule, and it is what shrinks a wide diagram to the pane. See the fuller
+         note on the same rules in src/view/index.html. */
       .stage svg {
         display: block;
-        max-width: 100%;
+        width: var(--diagram-width, 100%);
+        max-width: 100% !important;
         height: auto;
       }
       .stage.no-shrink .pan {
         max-width: none;
       }
       .stage.no-shrink svg {
-        max-width: none;
+        max-width: none !important;
       }
 
       /* An explicit height chosen in the Size dropdown (see SIZE_PRESETS in

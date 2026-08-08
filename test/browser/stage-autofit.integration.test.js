@@ -25,7 +25,7 @@ import { MAX_ZOOM, maxZoomFor, shrinkToFit, untransformedRect } from '../../src/
 const STAGE_CSS = `
   .stage { position: relative; overflow: hidden; width: 400px; height: 300px; }
   .pan { width: fit-content; max-width: 100%; margin: 0 auto; }
-  .stage svg { display: block; max-width: 100%; height: auto; }
+  .stage svg { display: block; width: var(--diagram-width, 100%); max-width: 100% !important; height: auto; }
   .stage.sized:not(:fullscreen):not(.maximized) .pan { max-width: none; }
   .stage.sized:not(:fullscreen):not(.maximized) svg {
     height: var(--diagram-height) !important;
@@ -54,7 +54,13 @@ function mount(svg = SVG) {
   stage.innerHTML = `<div class="pan">${svg}</div>`;
   document.body.append(stage);
   mounted.push(stage);
-  return { stage, pan: stage.querySelector('.pan'), svg: stage.querySelector('svg') };
+  const svgEl = stage.querySelector('svg');
+  // What Stage publishes once the SVG lands, so the rules above have the width
+  // they read (see the --diagram-width note in src/components/Stage.tsx). Set by
+  // hand here, as the CSS is; that Stage really publishes it is asserted against
+  // a mounted component in stage-width.integration.test.js.
+  stage.style.setProperty('--diagram-width', `${svgEl.viewBox.baseVal.width}px`);
+  return { stage, pan: stage.querySelector('.pan'), svg: svgEl };
 }
 
 afterEach(() => {
