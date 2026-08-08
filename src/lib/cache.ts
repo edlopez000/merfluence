@@ -34,6 +34,13 @@ export const CACHE_VERSION = 3;
 // Each theme is gated independently: if one variant is too large the other can
 // still cache, and the oversized theme simply renders on view as it did before
 // caching existed.
+//
+// This number is not derived from any Confluence limit, and deliberately so —
+// it exists to stop one pathological diagram bloating a page. It turns out to
+// bound the per-page aggregate as well, because a diagram big enough to matter
+// is a diagram that fails this gate and stores no SVG at all. The measured
+// ceilings (editor ~5.23 MB, REST API exactly 20,000,000 bytes) and why no
+// per-page check exists are in docs/STORAGE-BUDGET.md.
 const MAX_SVG_BYTES = 45 * 1024;
 
 /**

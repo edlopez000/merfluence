@@ -17,6 +17,12 @@ because it came from config — and loads zero Mermaid on a hit.
 
 - `MAX_SVG_BYTES` is ~45KB **per string**. Over budget, that SVG is dropped so
   the save still succeeds; `cacheV` is always written regardless.
+- There is **no per-page aggregate budget**, and there cannot be one: the editor
+  sees only its own macro's config, and reading the rest of the page would need
+  a scope. The measured Confluence ceilings — editor ~5.23 MB, REST API exactly
+  20,000,000 bytes — and the decision not to act on them are in
+  [docs/STORAGE-BUDGET.md](../../docs/STORAGE-BUDGET.md). Don't re-propose a
+  total-budget check.
 - `CACHE_VERSION` is `3`, and a config written by any other version is treated
   as absent. Bump it — don't reinterpret old shapes — whenever the cached fields
   change meaning. v1 stored a dark-themed SVG in `svgLight` (a theme race at
