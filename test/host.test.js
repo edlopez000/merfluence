@@ -71,6 +71,35 @@ describe('resolveTheme', () => {
   });
 });
 
+// The backdrop for the reader's "PNG (with background)" export. It has to be
+// the colour the stage is actually painted, not a second copy of it: the CSS
+// paints var(--ds-surface, #fff), and two independent hardcodings would drift
+// the first time Atlassian moves the token.
+describe('surfaceColor', () => {
+  afterEach(() => {
+    document.documentElement.style.removeProperty('--ds-surface');
+  });
+
+  it('prefers the live --ds-surface token over the fallbacks', async () => {
+    const { surfaceColor } = await freshHost();
+    document.documentElement.style.setProperty('--ds-surface', '#123456');
+
+    // The theme argument is only the fallback selector, so the token wins in
+    // both — this is what keeps the PNG matching what is on screen.
+    expect(surfaceColor('light')).toBe('#123456');
+    expect(surfaceColor('dark')).toBe('#123456');
+  });
+
+  it('falls back per theme when the host has injected no tokens', async () => {
+    const { surfaceColor } = await freshHost();
+    // Before enableTheme() lands, or on a host too old for --ds-* entirely.
+    expect(surfaceColor('light')).toBe('#ffffff');
+    // Not white: a dark-themed diagram's light text on white is unreadable,
+    // which is the failure this whole option exists to avoid.
+    expect(surfaceColor('dark')).toBe('#1f1f21');
+  });
+});
+
 describe('getConfig', () => {
   it('returns the saved fields from extension.config', async () => {
     const host = await freshHost();

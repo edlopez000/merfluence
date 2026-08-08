@@ -33,7 +33,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 - Import a diagram from a [Mermaid Live Editor](https://mermaid.live) link by pasting or dragging it onto the editor — the source travels in the link's `#pako:` / `#base64:` fragment, so it is decoded in your browser and nothing is ever fetched
 - Automatic light/dark theming that follows Confluence
 - A per-diagram display size (Small, Medium, or Large), or the diagram's natural size
-- Pan, zoom, and fullscreen navigation, with export to SVG or PNG
+- Pan, zoom, and fullscreen navigation, with export to SVG or PNG — the PNG either transparent, or on a background matching the page
 - Full keyboard operation — focus a diagram and pan, zoom, reset, or go fullscreen without a mouse
 - A text alternative on every diagram for screen readers, from your own `accTitle` / `accDescr`
 - Copy the source from any rendered diagram

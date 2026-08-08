@@ -4,7 +4,14 @@ import { createRoot } from 'react-dom/client';
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { ensureAccessibleName } from '../lib/a11y-name.js';
 import { loadMermaid, resolvedVersion } from '../lib/mermaid-registry.js';
-import { enableTheme, getConfig, onThemeChange, resolveTheme, resize } from '../lib/host.js';
+import {
+  enableTheme,
+  getConfig,
+  onThemeChange,
+  resolveTheme,
+  resize,
+  surfaceColor,
+} from '../lib/host.js';
 import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
 import { download, exportPng } from '../lib/png-export.js';
@@ -30,7 +37,12 @@ import type { StageActions } from '../components/Stage.jsx';
  */
 const MIN_BUSY_MS = 400;
 
-function ViewActions({ source, getSvg, setFailure }: StageActions & { source: string }) {
+function ViewActions({
+  source,
+  theme,
+  getSvg,
+  setFailure,
+}: StageActions & { source: string; theme: 'light' | 'dark' }) {
   const [copied, setCopied] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -71,7 +83,7 @@ function ViewActions({ source, getSvg, setFailure }: StageActions & { source: st
     download(new Blob([markup], { type: 'image/svg+xml' }), 'diagram.svg');
   };
 
-  const savePng = async () => {
+  const savePng = async (background: string | null) => {
     const svg = getSvg();
     // Already running: a second export would start another full-size rasterize
     // on top of the first, which is exactly what someone does when the first
@@ -85,7 +97,7 @@ function ViewActions({ source, getSvg, setFailure }: StageActions & { source: st
       // the image's onload runs in this same task, so without this the first
       // paint of "Exporting…" would already be behind part of the export.
       await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
-      await exportPng(svg);
+      await exportPng(svg, { background });
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
     } finally {
@@ -114,15 +126,32 @@ function ViewActions({ source, getSvg, setFailure }: StageActions & { source: st
         </button>
         {exportOpen && (
           <div className="export-menu" role="menu">
+            {/* With-background first: it is the safer paste. Transparent is the
+                one you want when compositing onto a surface you control, but
+                dropped somewhere dark — Slack in dark mode, a dark slide — a
+                dark-themed diagram becomes light text on nothing. The reader
+                clicking here is the one who knows where the image is going. The
+                colour is resolved at click time, so it follows a theme flip
+                with no extra wiring. */}
             <button
               type="button"
               role="menuitem"
               onClick={() => {
-                savePng();
+                savePng(surfaceColor(theme));
                 setExportOpen(false);
               }}
             >
-              PNG
+              PNG (with background)
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                savePng(null);
+                setExportOpen(false);
+              }}
+            >
+              PNG (transparent)
             </button>
             <button
               type="button"
@@ -374,7 +403,13 @@ function App() {
         height={normalizeHeight(config.height)}
         // A render prop rather than a plain node: copy and export need the
         // stage's own SVG and its failure slot, both of which Stage owns.
-        toolbarExtras={(actions) => <ViewActions {...actions} source={config.source ?? ''} />}
+        toolbarExtras={(actions) => (
+          <ViewActions
+            {...actions}
+            source={config.source ?? ''}
+            theme={resolveTheme(config.theme)}
+          />
+        )}
       />
       <div className="meta">Mermaid {state.version}</div>
     </div>

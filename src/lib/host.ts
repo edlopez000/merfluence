@@ -35,6 +35,24 @@ export function resolveTheme(pref: string | null | undefined) {
 }
 
 /**
+ * The colour the stage is painted on, for an export that needs an opaque
+ * backdrop rather than a transparent one.
+ *
+ * Read from the live `--ds-surface` token rather than hardcoded, so a PNG
+ * exported "with background" matches what the reader is looking at — the stage
+ * paints the same token (see `.stage:fullscreen` in src/view/index.html), and
+ * two independent copies of the colour would drift the first time Atlassian
+ * moves it. The token is only present once enableTheme() has run and the host
+ * has injected the --ds-* variables, so the fallbacks are the same light/dark
+ * pair the CSS declares, chosen by the theme the diagram actually rendered in.
+ */
+export function surfaceColor(theme: 'light' | 'dark') {
+  const token = getComputedStyle(document.documentElement).getPropertyValue('--ds-surface').trim();
+  if (token) return token;
+  return theme === 'dark' ? '#1f1f21' : '#ffffff';
+}
+
+/**
  * The mode resolveTheme('auto') would pick right now: the typed host signal
  * when known, otherwise the OS preference. This is what onThemeChange gates
  * its notifications on — comparing hostColorMode alone would go blind to an

@@ -93,8 +93,19 @@ export function exportScaleFor(
  * of whatever size it is displayed at, so the same diagram exports identically
  * from any column width, zoom level or Size preset. 2x because a 1x flowchart
  * pasted into a deck looks like a fax.
+ *
+ * `background` is a CSS colour to paint behind the diagram, or null for the
+ * transparent export. Mermaid paints no backdrop of its own, so transparent is
+ * what the canvas gives us for free — right for compositing onto a coloured
+ * slide, wrong for pasting anywhere the backdrop might be dark, where a
+ * dark-themed diagram's light text disappears. The reader picks per export; the
+ * colour itself is resolved by the caller (see surfaceColor in host.ts) so this
+ * module stays out of the theming business.
  */
-export async function exportPng(svgEl: SVGElement, scale = 2) {
+export async function exportPng(
+  svgEl: SVGElement,
+  { scale = 2, background = null }: { scale?: number; background?: string | null } = {},
+) {
   const clone = svgEl.cloneNode(true) as SVGElement;
   const { width, height } = naturalSize(svgEl);
   clone.setAttribute('width', String(width));
@@ -122,6 +133,15 @@ export async function exportPng(svgEl: SVGElement, scale = 2) {
   canvas.height = Math.ceil(height * scale);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not rasterize the diagram');
+  // Fill in device pixels, before the scale transform. The canvas dimensions are
+  // rounded *up* from width * scale, so filling the diagram's own box under the
+  // transform would stop a sub-pixel short and leave a transparent seam down the
+  // right and bottom edges — invisible until the PNG lands on a dark backdrop,
+  // which is the case this option exists for.
+  if (background) {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
   ctx.scale(scale, scale);
   ctx.drawImage(image, 0, 0);
 
