@@ -160,6 +160,33 @@
         font-size: 13px;
       }
 
+      /* Mermaid token colours, consumed by mermaidHighlightStyle. Each is an
+         Atlassian design token with a literal fallback for the case where the
+         host hasn't injected --ds-* yet (enableTheme resolves asynchronously,
+         so the first paint can land before the tokens do) — hence a separate
+         dark set rather than one set of light literals that would be unreadable
+         on the dark editor surface. The .editor-dark class comes from the
+         Editor component's own `dark` flag; see mermaid-lang.ts for why not
+         CodeMirror's theme class or the host's data-color-mode. */
+      .editor {
+        --mf-tok-keyword: var(--ds-text-accent-blue, #0055cc);
+        --mf-tok-comment: var(--ds-text-subtlest, #626f86);
+        --mf-tok-string: var(--ds-text-accent-green, #216e4e);
+        --mf-tok-operator: var(--ds-text-accent-magenta, #943d73);
+        --mf-tok-meta: var(--ds-text-accent-purple, #5e4db2);
+        --mf-tok-number: var(--ds-text-accent-orange, #a54800);
+        --mf-tok-variable: var(--ds-text, #172b4d);
+      }
+      .editor.editor-dark {
+        --mf-tok-keyword: var(--ds-text-accent-blue, #579dff);
+        --mf-tok-comment: var(--ds-text-subtlest, #9fadbc);
+        --mf-tok-string: var(--ds-text-accent-green, #7ee2b8);
+        --mf-tok-operator: var(--ds-text-accent-magenta, #f797d2);
+        --mf-tok-meta: var(--ds-text-accent-purple, #b8acf6);
+        --mf-tok-number: var(--ds-text-accent-orange, #fec195);
+        --mf-tok-variable: var(--ds-text, #c7d1db);
+      }
+
       /* overflow: hidden, not auto — the shared Stage below clips and pans
          instead of the pane scrolling, so a wheel or a drag reaches the diagram
          rather than the scrollbar. */
