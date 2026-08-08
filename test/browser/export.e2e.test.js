@@ -97,6 +97,87 @@ describe('exportPng is zoom-independent', () => {
   });
 });
 
+/**
+ * What the exported PNG is a multiple of. It has to be the diagram's own size:
+ * the reported bug was a tall diagram on the Large preset exporting at 1179x1600
+ * against a natural 1983x2693 — 0.59x its own pixels, and soft text — because the
+ * export measured the *laid-out* size, which the Size preset had shrunk to 800px
+ * tall. Same code gave a diagram that happened to be laid out at natural size a
+ * clean 2x, so the defect was invisible until the two were compared.
+ */
+describe('exportPng is layout-independent', () => {
+  async function exportedSize(el) {
+    await exportPng(el);
+    const blob = createSpy.mock.calls.at(-1)[0];
+    const bitmap = await createImageBitmap(blob);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return size;
+  }
+
+  it('exports the same pixels however the browser laid the diagram out', async () => {
+    const { svg } = await renderDiagram({ source: 'flowchart TD\n  A --> B', theme: 'light' });
+
+    // Natural: nothing constraining it.
+    const natural = mountSvg(svg);
+    const box = natural.viewBox.baseVal;
+
+    // Squeezed into a narrow column, the way a wide diagram is in the macro.
+    const narrow = mountSvg(svg);
+    narrow.parentElement.style.width = '60px';
+    narrow.style.width = '100%';
+    narrow.style.height = 'auto';
+
+    // The shape the Size presets impose: height pinned, width from the ratio.
+    // This is the case from the bug report, and the one that used to lose.
+    const preset = mountSvg(svg);
+    preset.style.height = '40px';
+    preset.style.width = 'auto';
+    preset.style.maxWidth = 'none';
+
+    // The premise: these really are three different laid-out sizes.
+    const laidOut = [natural, narrow, preset].map((el) => el.getBoundingClientRect().width);
+    expect(new Set(laidOut.map(Math.round)).size).toBe(3);
+
+    const sizes = [];
+    for (const el of [natural, narrow, preset]) sizes.push(await exportedSize(el));
+
+    // ...and yet one export. 2x the viewBox, from all three.
+    const expected = { width: Math.ceil(box.width * 2), height: Math.ceil(box.height * 2) };
+    for (const size of sizes) expect(size).toEqual(expected);
+  });
+
+  it('falls back to the laid-out size for markup with no viewBox', async () => {
+    // Nothing Mermaid emits, but hand-authored SVG reaches this, and the old
+    // measurement is a better answer there than refusing to export.
+    const el = mountSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60">' +
+        '<rect x="0" y="0" width="120" height="60" fill="#0c66e4"/></svg>',
+    );
+
+    expect(await exportedSize(el)).toEqual({ width: 240, height: 120 });
+  });
+
+  it('stays inside the canvas ceiling on a diagram too big to double', async () => {
+    // 20000x20000 doubled is 1.6 gigapixels; a canvas that size comes back blank
+    // rather than throwing, so the scale has to be clamped before painting.
+    const el = mountSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20000 20000">' +
+        '<rect x="0" y="0" width="20000" height="20000" fill="#0c66e4"/></svg>',
+    );
+
+    const size = await exportedSize(el);
+    expect(size.width).toBeLessThanOrEqual(16384);
+    expect(size.height).toBeLessThanOrEqual(16384);
+    // The area budget, plus the row and column that rounding each axis up to a
+    // whole pixel can add — the exact bound, not a fudge factor.
+    expect(size.width * size.height).toBeLessThanOrEqual(32e6 + size.width + size.height);
+    // Clamped, not skipped: it is still a real raster of the diagram.
+    expect(size.width).toBeGreaterThan(0);
+    expect(createSpy.mock.calls.at(-1)[0].size).toBeGreaterThan(0);
+  });
+});
+
 describe('download', () => {
   it('turns a blob into an anchor click and revokes the object URL', () => {
     const blob = new Blob(['<svg></svg>'], { type: 'image/svg+xml' });

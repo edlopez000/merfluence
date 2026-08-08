@@ -5,16 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Merfluence</title>
     <style>
-      /* Sizes the body to its content instead of the iframe's default width.
-         Declared in a <style> tag, not a style="" attribute, so this alone
-         would not require the unsafe-inline permission — Mermaid's own output
-         is what requires it. */
+      /* The macro is exactly as wide as its column, never wider. A diagram that
+         does not fit is clipped by .stage's overflow: hidden and reached by
+         panning — the alternative, letting the content stretch the body, grows
+         the Forge iframe until Confluence scrolls the whole macro sideways and
+         carries the toolbar (anchored to .root's right edge) and the version
+         stamp out of view.
+
+         This is also what gives .stage a definite width, without which its
+         overflow: hidden has nothing to clip against and the diagram's own width
+         bubbles back up. Declared in a <style> tag, not a style="" attribute, so
+         this alone would not require the unsafe-inline permission — Mermaid's
+         own output is what requires it. */
       html,
       body {
         margin: 0;
         padding: 0;
-        width: fit-content;
-        min-width: 100%;
+        width: 100%;
         background: transparent;
         font-family: var(
           --ds-font-family-sans,
@@ -30,8 +37,7 @@
 
       .root {
         position: relative;
-        display: inline-block;
-        min-width: 100%;
+        width: 100%;
       }
 
       .stage {
@@ -76,37 +82,36 @@
            per frame IS the crispness; an SVG that renders as a fuzzy bitmap
            gives up the reason to ship SVG at all. */
       }
+      /* width is the fix for issue #141. With useMaxWidth on, Mermaid writes
+         width="100%" and keeps the real width only in an inline max-width — and
+         a percentage width has nothing to resolve against inside .pan's
+         shrink-to-fit box, so the SVG fell back to the replaced-element default
+         of 300x150 and the column width never reached the diagram. The variable
+         carries the viewBox's width, which Stage sets once the SVG lands (see
+         src/components/Stage.tsx); with a real width in hand, .pan's fit-content
+         resolves to the diagram's own width and max-width below clamps it to the
+         column. The 100% fallback is the old behaviour, for an SVG with no
+         viewBox to measure.
+
+         !important because that inline max-width outranks any stylesheet rule,
+         and it is the clamp that shrinks a wide diagram to the column — without
+         it the default mode would lay out at full width and clip, i.e. behave
+         like no-shrink below. Same reason the .sized rules further down need it. */
       .stage svg {
         display: block;
-        max-width: 100%;
+        width: var(--diagram-width, 100%);
+        max-width: 100% !important;
         height: auto;
       }
       .stage.no-shrink .pan {
         max-width: none;
       }
+      /* !important to beat the rule above, which now carries it. With
+         useMaxWidth off Mermaid emits explicit width/height attributes instead
+         of a percentage, so this mode always had a real width; dropping the
+         clamp is all it needs. */
       .stage.no-shrink svg {
-        max-width: none;
-      }
-
-      /* "Keep full width" with a diagram wider than the column: clip it to the
-         column and let the existing drag-pan reach the rest, rather than letting
-         it grow the macro. The body is width: fit-content, so an oversized
-         diagram otherwise stretches the whole macro past the column; the Forge
-         iframe then grows to match and Confluence scrolls the entire macro
-         horizontally — carrying the toolbar (anchored to .root's right edge) and
-         the version stamp out of view. Capping the frame to the column gives
-         .stage a definite width so its overflow: hidden actually clips; without a
-         definite width the diagram's intrinsic width bubbles up through the
-         fit-content body and re-stretches .root. Scoped with :has() so every
-         other case keeps the content-hugging fit-content sizing. */
-      html:has(.stage.no-shrink),
-      html:has(.stage.no-shrink) body {
-        width: 100%;
-      }
-      .root:has(.stage.no-shrink) {
-        display: block;
-        width: 100%;
-        min-width: 0;
+        max-width: none !important;
       }
 
       /* An explicit height chosen in the editor's Size dropdown (see SIZE_PRESETS
@@ -321,6 +326,40 @@
         text-overflow: ellipsis;
       }
 
+      /* The in-progress variant of the same chip: neutral rather than danger,
+         with the spinner beside the text. Deliberately the same .status class —
+         that is what the `.toolbar:has(.status)` rule above keys on, so the
+         toolbar stays on screen for the whole export instead of fading away the
+         moment the pointer leaves and running invisibly. */
+      .toolbar .status.busy {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-color: var(--ds-border, #dfe1e6);
+        background: var(--ds-surface-overlay, #fff);
+        color: var(--ds-text-subtle, #44546f);
+      }
+      /* Animating `transform` (rather than, say, a border sweep) keeps this on
+         the compositor, so it goes on turning through the rasterize and the PNG
+         encode instead of freezing on the frame the main thread stopped at — a
+         spinner that stalls during the wait it exists to cover is worse than
+         none. This is the opposite call from .pan above, and for the opposite
+         reason: nothing here needs to stay sharp under a live scale. */
+      .spinner {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border: 2px solid var(--ds-border, #dfe1e6);
+        border-top-color: var(--ds-text-subtle, #44546f);
+        border-radius: 50%;
+        animation: spin 700ms linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       /* Export is a button that opens a small menu of formats (PNG / SVG),
          replacing the two separate buttons. The menu is absolutely positioned so
          it drops below without changing the toolbar's height. */
@@ -412,6 +451,11 @@
         .toolbar,
         .meta {
           transition: none;
+        }
+        /* The ring goes static; the "Exporting…" text next to it is what
+           actually carries the meaning, so nothing is lost by stopping it. */
+        .spinner {
+          animation: none;
         }
       }
     </style>

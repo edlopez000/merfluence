@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, createEvent, fireEvent } from '@testing-library/react';
+import { act, createEvent, fireEvent, waitFor } from '@testing-library/react';
 
 import { CACHE_VERSION } from '../src/lib/cache.js';
 import { resolvedVersion } from '../src/lib/mermaid-registry.js';
@@ -417,6 +417,10 @@ const btnByText = (re) =>
 const btnByLabel = (re) =>
   [...root().querySelectorAll('button')].find((b) => re.test(b.getAttribute('aria-label') || ''));
 const stageEl = () => root().querySelector('.stage');
+// A PNG export starts one animation frame after the click — the frame that lets
+// the "Exporting…" chip paint before the rasterize begins — so it is never
+// observable in the click's own tick.
+const waitForPng = () => waitFor(() => expect(p.exportPng).toHaveBeenCalled());
 const zoomLabel = () => root().querySelector('.zoom-level')?.textContent;
 
 /**
@@ -498,9 +502,11 @@ describe('toolbar: export menu', () => {
     expect(root().querySelector('.export-menu')).toBeNull();
 
     fireEvent.click(btnByText(/^export/i));
-    await act(async () => {
-      fireEvent.click(btnByText(/^png$/i));
-    });
+    fireEvent.click(btnByText(/^png$/i));
+    // Not called in the same tick, deliberately: savePng waits a frame first so
+    // the "Exporting…" chip paints before the rasterize starts (see MIN_BUSY_MS
+    // in src/view/main.tsx). Every PNG assertion below has to wait for it.
+    await waitForPng();
     expect(p.exportPng).toHaveBeenCalledTimes(1);
     expect(p.exportPng.mock.calls[0][0].tagName.toLowerCase()).toBe('svg');
   });
@@ -510,11 +516,95 @@ describe('toolbar: export menu', () => {
     await mountReady();
 
     fireEvent.click(btnByText(/^export/i));
-    await act(async () => {
-      fireEvent.click(btnByText(/^png$/i));
-    });
+    fireEvent.click(btnByText(/^png$/i));
+    await waitForPng();
 
+    await waitFor(() => expect(root().textContent).toMatch(/canvas tainted/i));
+  });
+});
+
+// --- The export is not instant, and used to say so to nobody -----------------
+// A PNG is rasterized at twice the diagram's own size and encoded; that is fast
+// but not free, and the toolbar it was clicked from fades out as soon as the
+// pointer leaves (`.root:hover .toolbar`). So the click produced no
+// acknowledgement at all, and the natural response — click it again — started a
+// second full-size encode on top of the first.
+describe('toolbar: PNG export progress', () => {
+  /** An export that stays in flight until the test resolves it. */
+  function deferExport() {
+    let settle;
+    p.exportPng.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject };
+        }),
+    );
+    return {
+      finish: async () => {
+        await act(async () => settle.resolve());
+      },
+      fail: async (message) => {
+        await act(async () => settle.reject(new Error(message)));
+      },
+    };
+  }
+
+  const busy = () => root().querySelector('.status.busy');
+
+  async function startExport() {
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(btnByText(/^png$/i));
+    await waitForPng();
+  }
+
+  it('shows a live-region chip for as long as the export runs', async () => {
+    const held = deferExport();
+    await mountReady();
+
+    expect(busy()).toBeNull();
+    await startExport();
+
+    // Announced politely rather than silently drawn: this is the only signal a
+    // screen-reader user gets that the button did anything.
+    expect(busy()).not.toBeNull();
+    expect(busy().getAttribute('role')).toBe('status');
+    expect(busy().textContent).toMatch(/exporting/i);
+
+    // It is a .status element, which is what `.toolbar:has(.status)` keys the
+    // toolbar's visibility on — that rule is what keeps the toolbar on screen
+    // once the pointer has moved off the macro.
+    expect(busy().classList.contains('status')).toBe(true);
+
+    await held.finish();
+    await waitFor(() => expect(busy()).toBeNull());
+  });
+
+  it('cannot be told to export twice while one is running', async () => {
+    const held = deferExport();
+    await mountReady();
+    await startExport();
+
+    // The trigger is disabled, so the menu cannot even be reopened...
+    expect(btnByText(/^export/i).disabled).toBe(true);
+    fireEvent.click(btnByText(/^export/i));
+    expect(root().querySelector('.export-menu')).toBeNull();
+
+    await held.finish();
+    await waitFor(() => expect(busy()).toBeNull());
+    expect(p.exportPng).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the chip when the export fails, and shows why', async () => {
+    const held = deferExport();
+    await mountReady();
+    await startExport();
+
+    await held.fail('canvas tainted');
+
+    // The finally path: a failure must not strand the toolbar in "Exporting…".
+    await waitFor(() => expect(busy()).toBeNull());
     expect(root().textContent).toMatch(/canvas tainted/i);
+    expect(btnByText(/^export/i).disabled).toBe(false);
   });
 });
 

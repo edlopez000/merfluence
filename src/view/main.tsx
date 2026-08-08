@@ -17,9 +17,23 @@ import type { StageActions } from '../components/Stage.jsx';
  * living inside it, so the config bundle never pulls in png-export.js or the
  * clipboard path: the editor has no use for either.
  */
+/**
+ * How long the "Exporting…" chip stays up at minimum.
+ *
+ * A PNG export is not instant — it rasterizes the diagram at twice its own size
+ * and encodes it (measured on a 1983x2693 sequence diagram: ~100ms for a 979KB
+ * PNG, most of it in toBlob, and multiples of that on a slower machine). But it
+ * is fast enough that a chip which appears and vanishes inside a few frames
+ * reads as a glitch rather than an acknowledgement, so the chip is held briefly
+ * and every click lands the same way. Only the chip waits; the download itself
+ * still fires the moment the blob is ready.
+ */
+const MIN_BUSY_MS = 400;
+
 function ViewActions({ source, getSvg, setFailure }: StageActions & { source: string }) {
   const [copied, setCopied] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const exportRef = useRef<HTMLDivElement | null>(null);
 
   // Close the export menu on an outside click or Escape, the two things a user
@@ -59,11 +73,27 @@ function ViewActions({ source, getSvg, setFailure }: StageActions & { source: st
 
   const savePng = async () => {
     const svg = getSvg();
-    if (!svg) return;
+    // Already running: a second export would start another full-size rasterize
+    // on top of the first, which is exactly what someone does when the first
+    // click appeared to do nothing. The disabled trigger below is the visible
+    // half of this; the guard is what actually holds.
+    if (!svg || exporting) return;
+    setExporting(true);
+    const started = Date.now();
     try {
+      // Give the chip a frame to paint before the work starts. Everything up to
+      // the image's onload runs in this same task, so without this the first
+      // paint of "Exporting…" would already be behind part of the export.
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
       await exportPng(svg);
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
+    } finally {
+      const elapsed = Date.now() - started;
+      if (elapsed < MIN_BUSY_MS) {
+        await new Promise((resolve) => setTimeout(resolve, MIN_BUSY_MS - elapsed));
+      }
+      setExporting(false);
     }
   };
 
@@ -77,6 +107,7 @@ function ViewActions({ source, getSvg, setFailure }: StageActions & { source: st
           type="button"
           aria-haspopup="menu"
           aria-expanded={exportOpen}
+          disabled={exporting}
           onClick={() => setExportOpen((open) => !open)}
         >
           Export <span aria-hidden="true">▾</span>
@@ -106,6 +137,18 @@ function ViewActions({ source, getSvg, setFailure }: StageActions & { source: st
           </div>
         )}
       </div>
+      {/* Reuses .status — the toolbar's shared message slot — so the existing
+          `.toolbar:has(.status)` rule keeps the toolbar on screen for the whole
+          export. Without that the toolbar fades out the moment the pointer
+          leaves and the export runs with nothing on screen at all, which is the
+          bug this is fixing. role="status" makes the same announcement to a
+          screen reader; the spinner is decorative and stays out of the tree. */}
+      {exporting && (
+        <span className="status busy" role="status">
+          <span className="spinner" aria-hidden="true" />
+          Exporting…
+        </span>
+      )}
     </>
   );
 }
