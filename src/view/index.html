@@ -326,6 +326,104 @@
         text-overflow: ellipsis;
       }
 
+      /* The in-progress variant of the same chip: neutral rather than danger,
+         with the spinner beside the text. Deliberately the same .status class —
+         that is what the `.toolbar:has(.status)` rule above keys on, so the
+         toolbar stays on screen for the whole export instead of fading away the
+         moment the pointer leaves and running invisibly. */
+      .toolbar .status.busy {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-color: var(--ds-border, #dfe1e6);
+        background: var(--ds-surface-overlay, #fff);
+        color: var(--ds-text-subtle, #44546f);
+      }
+      /* Animating `transform` (rather than, say, a border sweep) keeps this on
+         the compositor, so it goes on turning through the rasterize and the PNG
+         encode instead of freezing on the frame the main thread stopped at — a
+         spinner that stalls during the wait it exists to cover is worse than
+         none. This is the opposite call from .pan above, and for the opposite
+         reason: nothing here needs to stay sharp under a live scale. */
+      .spinner {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border: 2px solid var(--ds-border, #dfe1e6);
+        border-top-color: var(--ds-text-subtle, #44546f);
+        border-radius: 50%;
+        animation: spin 700ms linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Export is a button that opens a small menu of formats (PNG / SVG),
+         replacing the two separate buttons. The menu is absolutely positioned so
+         it drops below without changing the toolbar's height. */
+      .export {
+        position: relative;
+        display: flex;
+      }
+      .export-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        min-width: 100%;
+        padding: 2px;
+        border-radius: 6px;
+        background: var(--ds-surface-overlay, #fff);
+        border: 1px solid var(--ds-border, #dfe1e6);
+        box-shadow: var(--ds-shadow-overlay, 0 4px 8px rgba(9, 30, 66, 0.25));
+      }
+      .export-menu button {
+        justify-content: flex-start;
+        text-align: left;
+      }
+      /* The zoom percentage doubles as the "reset view" control (click to reset
+         zoom + pan). It inherits .toolbar button styling, including hover. */
+      .toolbar .zoom-level {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 6px;
+        font-variant-numeric: tabular-nums;
+        /* 5ch, not 4: a heavily shrunk diagram now zooms past 999%, and the
+           readout is the raw transform factor, so the toolbar would reflow the
+           moment it gained a digit. */
+        min-width: 5ch;
+      }
+
+      /* Version stamp: overlaid bottom-left and revealed on hover, like the
+         toolbar, so it's there for bug reports without cluttering every diagram.
+         Absolute (not in flow) so it reserves no empty line; pointer-events none
+         so it never swallows a drag that starts over it. */
+      .meta {
+        position: absolute;
+        bottom: 4px;
+        left: 4px;
+        font-size: 11px;
+        line-height: 1;
+        color: var(--ds-text-subtlest, #626f86);
+        background: var(--ds-surface-overlay, #fff);
+        border: 1px solid var(--ds-border, #dfe1e6);
+        border-radius: 4px;
+        padding: 3px 6px;
+        opacity: 0;
+        transition: opacity 120ms ease-in;
+        pointer-events: none;
+      }
+      .root:hover .meta,
+      .toolbar:focus-within ~ .meta,
+      .root:has(.stage:focus-visible) .meta {
+        opacity: 1;
+      }
+
       .message {
         padding: 12px 14px;
         border-radius: 4px;
@@ -353,6 +451,11 @@
         .toolbar,
         .meta {
           transition: none;
+        }
+        /* The ring goes static; the "Exporting…" text next to it is what
+           actually carries the meaning, so nothing is lost by stopping it. */
+        .spinner {
+          animation: none;
         }
       }
     </style>
