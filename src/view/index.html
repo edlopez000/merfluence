@@ -384,6 +384,14 @@
       .export-menu button {
         justify-content: flex-start;
         text-align: left;
+        /* The menu is absolutely positioned, so its shrink-to-fit width is
+           capped by the containing block — .export, which is only as wide as the
+           "Export ▾" trigger. Short labels fit inside that by luck; "PNG (with
+           background)" wraps to two lines without this. Absolutely positioned
+           boxes are allowed to be wider than their containing block, so nowrap
+           lets the menu take its max-content width and grow leftward from
+           right: 0. */
+        white-space: nowrap;
       }
       /* The zoom percentage doubles as the "reset view" control (click to reset
          zoom + pan). It inherits .toolbar button styling, including hover. */

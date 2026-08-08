@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   onThemeChange: vi.fn(() => () => {}),
   resolveTheme: vi.fn((pref) => (pref === 'dark' ? 'dark' : 'light')),
   resize: vi.fn(),
+  surfaceColor: vi.fn(),
   renderDiagram: vi.fn(),
 }));
 
@@ -31,6 +32,7 @@ vi.mock('../src/lib/host.js', () => ({
   onThemeChange: h.onThemeChange,
   resolveTheme: h.resolveTheme,
   resize: h.resize,
+  surfaceColor: h.surfaceColor,
 }));
 
 // Partial mock: only renderDiagram is browser-only. sanitizeSvg (the cache-hit
@@ -90,6 +92,9 @@ beforeEach(() => {
   for (const key of Object.keys(h)) h[key].mockReset();
   h.onThemeChange.mockReturnValue(() => {});
   h.resolveTheme.mockImplementation((pref) => (pref === 'dark' ? 'dark' : 'light'));
+  // A recognizable stand-in for the resolved --ds-surface token; the real
+  // light/dark resolution is covered in test/host.test.js.
+  h.surfaceColor.mockImplementation((theme) => `surface-${theme}`);
   p.download.mockReset();
   p.exportPng.mockReset().mockImplementation(() => Promise.resolve());
   r.loadMermaid.mockReset().mockResolvedValue({});
@@ -400,12 +405,14 @@ describe('speculative Mermaid warm-up', () => {
 const CACHED_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg"><rect id="r" width="10" height="10"/></svg>';
 
-async function mountReady(source = 'flowchart TD\n A-->B') {
+async function mountReady(source = 'flowchart TD\n A-->B', theme = 'light') {
   h.getConfig.mockResolvedValue({
     source,
-    theme: 'light',
+    theme,
     cacheV: CACHE_VERSION,
-    svgLight: CACHED_SVG,
+    // The cached SVG has to be under the key for the theme being resolved, or
+    // this is a cache miss and Mermaid (mocked away here) would be asked to run.
+    ...(theme === 'dark' ? { svgDark: CACHED_SVG } : { svgLight: CACHED_SVG }),
   });
   await mountView();
 }
@@ -502,7 +509,7 @@ describe('toolbar: export menu', () => {
     expect(root().querySelector('.export-menu')).toBeNull();
 
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png$/i));
+    fireEvent.click(btnByText(/^png \(transparent\)$/i));
     // Not called in the same tick, deliberately: savePng waits a frame first so
     // the "Exporting…" chip paints before the rasterize starts (see MIN_BUSY_MS
     // in src/view/main.tsx). Every PNG assertion below has to wait for it.
@@ -516,10 +523,54 @@ describe('toolbar: export menu', () => {
     await mountReady();
 
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png$/i));
+    fireEvent.click(btnByText(/^png \(with background\)$/i));
     await waitForPng();
 
     await waitFor(() => expect(root().textContent).toMatch(/canvas tainted/i));
+  });
+});
+
+// --- Transparent is not always the export you want ---------------------------
+// Mermaid paints no backdrop, so the PNG was transparent and nothing said so.
+// That composites beautifully onto a coloured slide and disappears when pasted
+// into dark-mode Slack, where a dark-themed diagram is light text on nothing.
+// Both are now offered explicitly; which pixels each produces is asserted in
+// test/browser/export.e2e.test.js, where there is a real canvas to read back.
+describe('toolbar: PNG background choice', () => {
+  const menuItems = () =>
+    [...root().querySelectorAll('.export-menu [role="menuitem"]')].map((b) => b.textContent.trim());
+
+  it('offers both variants, with the safer paste first', async () => {
+    await mountReady();
+    fireEvent.click(btnByText(/^export/i));
+
+    // Order is the feature: the top item is the one that survives being pasted
+    // onto an unknown backdrop, and it is where the old plain "PNG" item sat.
+    expect(menuItems()).toEqual(['PNG (with background)', 'PNG (transparent)', 'SVG']);
+  });
+
+  it('paints the stage surface colour for the resolved theme', async () => {
+    await mountReady('flowchart TD\n A-->B', 'dark');
+
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(btnByText(/^png \(with background\)$/i));
+    await waitForPng();
+
+    // The diagram rendered dark, so the backdrop is resolved for dark too —
+    // white behind a dark diagram is the unreadable case.
+    expect(h.surfaceColor).toHaveBeenCalledWith('dark');
+    expect(p.exportPng.mock.calls[0][1]).toEqual({ background: 'surface-dark' });
+  });
+
+  it('asks for no background at all on the transparent variant', async () => {
+    await mountReady();
+
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(btnByText(/^png \(transparent\)$/i));
+    await waitForPng();
+
+    // null, not a colour: this is the export that has to stay alpha-zero.
+    expect(p.exportPng.mock.calls[0][1]).toEqual({ background: null });
   });
 });
 
@@ -553,7 +604,7 @@ describe('toolbar: PNG export progress', () => {
 
   async function startExport() {
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png$/i));
+    fireEvent.click(btnByText(/^png \(with background\)$/i));
     await waitForPng();
   }
 

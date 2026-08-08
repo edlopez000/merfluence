@@ -178,6 +178,73 @@ describe('exportPng is layout-independent', () => {
   });
 });
 
+/**
+ * The transparent / with-background choice in the reader's Export menu.
+ *
+ * Mermaid paints no backdrop, so the canvas gives us transparency for free —
+ * right for compositing onto a coloured slide, wrong for pasting anywhere the
+ * backdrop might be dark, where a dark-themed diagram's light text disappears
+ * into it. The only way to assert which one came out is to read the PNG back
+ * and look at its pixels, which is why this lives in the Chromium project.
+ */
+describe('exportPng background', () => {
+  /** The exported PNG's corner pixels, decoded back out of the blob. */
+  async function exportedCorners(el, options) {
+    await exportPng(el, options);
+    const blob = createSpy.mock.calls.at(-1)[0];
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    const at = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data);
+    const corners = { first: at(0, 0), last: at(bitmap.width - 1, bitmap.height - 1) };
+    bitmap.close();
+    return corners;
+  }
+
+  // A viewBox whose doubled size lands on a half pixel, so canvas.width is
+  // rounded up and the fill has to cover more than the diagram's own box.
+  const ODD_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120.25 60.25">' +
+    '<rect x="40" y="20" width="20" height="20" fill="#0c66e4"/></svg>';
+
+  it('paints the requested colour behind the diagram, to every edge', async () => {
+    const corners = await exportedCorners(mountSvg(ODD_SVG), { background: '#ff0000' });
+
+    expect(corners.first).toEqual([255, 0, 0, 255]);
+    // The far corner is the one that regresses if the fill is applied under the
+    // scale transform: canvas.width is ceil(width * scale), so filling the
+    // diagram's own box stops a sub-pixel short and leaves a transparent seam
+    // down the right and bottom edges — invisible until the PNG lands on a dark
+    // backdrop, which is the case this option exists for.
+    expect(corners.last).toEqual([255, 0, 0, 255]);
+  });
+
+  it('leaves the background transparent when none is asked for', async () => {
+    const byDefault = await exportedCorners(mountSvg(ODD_SVG));
+    const explicit = await exportedCorners(mountSvg(ODD_SVG), { background: null });
+
+    // Alpha zero, which is what the reader gets from "PNG (transparent)".
+    expect(byDefault.first[3]).toBe(0);
+    expect(byDefault.last[3]).toBe(0);
+    expect(explicit.first[3]).toBe(0);
+  });
+
+  it('still honours scale through the options object', async () => {
+    // scale had been a positional argument with no caller passing it; the
+    // options object is what carries both knobs now, so prove it still lands.
+    const el = mountSvg(ODD_SVG);
+    await exportPng(el, { scale: 1 });
+    const bitmap = await createImageBitmap(createSpy.mock.calls.at(-1)[0]);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+
+    expect(size).toEqual({ width: Math.ceil(120.25), height: Math.ceil(60.25) });
+  });
+});
+
 describe('download', () => {
   it('turns a blob into an anchor click and revokes the object URL', () => {
     const blob = new Blob(['<svg></svg>'], { type: 'image/svg+xml' });
