@@ -9,6 +9,19 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.5.0](https://github.com/edlopez000/merfluence/compare/v1.4.0...v1.5.0) (2026-08-08)
+
+
+### Features
+
+* highlight Mermaid syntax per dialect, themed with Confluence tokens ([#150](https://github.com/edlopez000/merfluence/issues/150)) ([83f4f2c](https://github.com/edlopez000/merfluence/commit/83f4f2cb522e193b29dd03d8afba29bf81dda35f))
+* offer a transparent or an opaque PNG export ([#149](https://github.com/edlopez000/merfluence/issues/149)) ([bb26750](https://github.com/edlopez000/merfluence/commit/bb26750a49428b310e5c3d391a2a8cfc5adbed82))
+
+
+### Bug Fixes
+
+* size diagrams and their PNG exports from the diagram, not the column ([#147](https://github.com/edlopez000/merfluence/issues/147)) ([168e28d](https://github.com/edlopez000/merfluence/commit/168e28df031dd8bb46842c45d0823bd83fc11b85))
+
 ## [1.4.0](https://github.com/edlopez000/merfluence/compare/v1.3.0...v1.4.0) (2026-08-07)
 
 
