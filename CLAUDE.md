@@ -42,7 +42,9 @@ src/lib/
 src/components/Stage.tsx  Shared pan/zoom/fit surface for both views
 src/view/main.tsx         Reader view
 src/config/               Editor: CodeMirror, live preview, error gutter;
-                          mermaid-lang.ts (CodeMirror StreamLanguage for Mermaid)
+                          mermaid-lang.ts (CodeMirror StreamLanguage for
+                          Mermaid + the highlight style; token colours come
+                          from --ds-* tokens via --mf-tok-* in index.html)
 test/                     Unit suite (jsdom) + parse corpus (test/fixtures/*.mmd)
 test/browser/             Real-Chromium suite: full render pipeline + XSS E2E
 ```

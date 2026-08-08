@@ -5,10 +5,10 @@ import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/s
 import type { Extension } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
+import { syntaxHighlighting, bracketMatching } from '@codemirror/language';
 import { Decoration } from '@codemirror/view';
 
-import { mermaid as mermaidLang } from './mermaid-lang.js';
+import { mermaid as mermaidLang, mermaidHighlightStyle } from './mermaid-lang.js';
 import { renderDiagram, describeError } from '../lib/render.js';
 import { resolvedVersion, VERSION_OPTIONS } from '../lib/mermaid-registry.js';
 import { TEMPLATES, DEFAULT_SOURCE } from '../lib/templates.js';
@@ -93,7 +93,7 @@ function Editor({
       history(),
       highlightActiveLine(),
       bracketMatching(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      syntaxHighlighting(mermaidHighlightStyle, { fallback: true }),
       mermaidLang,
       errorLineField,
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
@@ -134,10 +134,16 @@ function Editor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Swap the dark theme in and out of its compartment. oneDark is loaded only
-  // when it is first needed, keeping it out of the light editor's entry chunk;
-  // the flag is re-read on arrival so a flip back to light while the chunk is
-  // in flight doesn't apply a theme nobody asked for any more.
+  // Swap the dark theme in and out of its compartment. It is loaded only when
+  // first needed, keeping it out of the light editor's entry chunk; the flag is
+  // re-read on arrival so a flip back to light while the chunk is in flight
+  // doesn't apply a theme nobody asked for any more.
+  //
+  // oneDarkTheme, not oneDark: the latter is [oneDarkTheme,
+  // syntaxHighlighting(oneDarkHighlightStyle)], and that second half would
+  // outrank mermaidHighlightStyle and repaint the tokens in One Dark's palette
+  // instead of the --ds-* ones. We want its chrome — surface, gutter, cursor,
+  // selection — and our own token colours.
   useEffect(() => {
     let cancelled = false;
     const reconfigure = (extension: Extension) => {
@@ -148,7 +154,7 @@ function Editor({
       }
     };
     if (dark) {
-      import('@codemirror/theme-one-dark').then((m) => reconfigure(m.oneDark));
+      import('@codemirror/theme-one-dark').then((m) => reconfigure(m.oneDarkTheme));
     } else {
       reconfigure([]);
     }
@@ -202,7 +208,10 @@ function Editor({
 
   return (
     <div
-      className="editor"
+      // editor-dark scopes the --mf-tok-* token colours to the dark palette.
+      // It tracks the same flag as the theme compartment above, so the colours
+      // and the chrome can never disagree.
+      className={dark ? 'editor editor-dark' : 'editor'}
       ref={host}
       // The other half of the SC 2.1.2 advisory, for a sighted keyboard user who
       // never hears the field's description: the moment Tab is swallowed for

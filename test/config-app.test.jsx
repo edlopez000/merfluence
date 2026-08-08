@@ -1043,6 +1043,7 @@ describe('theme flip in the editor', () => {
     const editorBefore = document.querySelector('.cm-editor');
     const contentBefore = document.querySelector('.cm-content').textContent;
     expect(editorBefore).not.toBeNull();
+    expect(document.querySelector('.editor').className).not.toContain('editor-dark');
 
     await act(async () => {
       fireEvent.change(selectByLabel('Theme'), { target: { value: 'dark' } });
@@ -1055,6 +1056,11 @@ describe('theme flip in the editor', () => {
     // Same view instance, same document: nothing was torn down.
     expect(document.querySelector('.cm-editor')).toBe(editorBefore);
     expect(document.querySelector('.cm-content').textContent).toBe(contentBefore);
+
+    // The syntax colours follow the flip too. They resolve from --mf-tok-*
+    // custom properties that this class re-points at the dark palette, so
+    // without it the tokens would keep their light values on the dark surface.
+    expect(document.querySelector('.editor').className).toContain('editor-dark');
   });
 });
 
