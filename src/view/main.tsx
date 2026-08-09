@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { ensureAccessibleName } from '../lib/a11y-name.js';
+import { centerMindmapLabels } from '../lib/mindmap-labels.js';
 import { loadMermaid, resolvedVersion } from '../lib/mermaid-registry.js';
 import {
   enableTheme,
@@ -256,14 +257,15 @@ function App() {
     // and stored it in config. Paint it and never load Mermaid — the whole win.
     // Re-sanitize: this SVG comes from macro config, which anyone who can edit
     // the page can author, so it gets the same DOMPurify pass a fresh render does.
-    // ensureAccessibleName runs first, in the same order as the fresh-render
-    // path — and it is what gives a diagram cached before that code existed a
-    // name, without invalidating every stored cache to do it.
+    // centerMindmapLabels and ensureAccessibleName run first, in the same order
+    // as the fresh-render path — and they are what give a diagram cached before
+    // that code existed a name and centred mindmap labels, without invalidating
+    // every stored cache to do it.
     const cached = pickCachedSvg(config, theme);
     if (cached) {
       setState({
         status: 'ready',
-        svg: sanitizeSvg(ensureAccessibleName(cached)),
+        svg: sanitizeSvg(ensureAccessibleName(centerMindmapLabels(cached))),
         // The version stored with the SVG, not this bundle's: the cached render
         // may predate several Mermaid upgrades. Only a config missing the field
         // falls back to the computed label.

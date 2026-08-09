@@ -216,6 +216,54 @@ describe('the rendered diagram has a text alternative (WCAG 2.1 SC 1.1.1)', () =
   });
 });
 
+describe('mindmap labels sit inside their nodes', () => {
+  // Mermaid 11's mindmap stylesheet is missing the
+  // `.node .label text { text-anchor: middle }` rule every other unified-renderer
+  // diagram emits, so with htmlLabels off — which is not optional for us — the
+  // label of the root circle and of every explicitly shaped node starts at the
+  // node's centre and runs off its right edge. centerMindmapLabels repairs it;
+  // this measures the real geometry, so it fails both if the repair regresses
+  // and if a future Mermaid fixes the bug in a way that makes the repair wrong.
+
+  /** The drawn shape: a direct child of the node group, never the label's own rects. */
+  function shapeOf(node) {
+    return node.querySelector(':scope > circle, :scope > rect, :scope > polygon, :scope > path');
+  }
+
+  it(
+    'centres every node label horizontally, whatever the shape',
+    async () => {
+      const { svg } = await renderDiagram({ source: fixtures.mindmap });
+      const host = mount(svg);
+
+      const nodes = [...host.querySelectorAll('g.mindmap-node')];
+      // The fixture has a root circle, a shaped node and a dozen plain ones —
+      // all three code paths through Mermaid's shape helpers.
+      expect(nodes.length).toBeGreaterThanOrEqual(3);
+      expect(host.querySelector('g.mindmap-node > circle')).not.toBeNull();
+
+      for (const node of nodes) {
+        const text = node.querySelector('text');
+        const shape = shapeOf(node);
+        if (!text || !shape || !text.textContent.trim()) continue;
+
+        const t = text.getBoundingClientRect();
+        const s = shape.getBoundingClientRect();
+        const label = text.textContent.trim();
+
+        // Centred on the node, and — the user-visible half — actually inside it.
+        expect(
+          Math.abs((t.left + t.right) / 2 - (s.left + s.right) / 2),
+          `${label} centred`,
+        ).toBeLessThanOrEqual(2);
+        expect(t.left, `${label} within left edge`).toBeGreaterThanOrEqual(s.left - 1);
+        expect(t.right, `${label} within right edge`).toBeLessThanOrEqual(s.right + 1);
+      }
+    },
+    RENDER_TIMEOUT,
+  );
+});
+
 describe('no-orphan-on-error invariant', () => {
   // A syntax error must never leave an orphan container pinned to the document
   // (a real Mermaid failure mode). The mechanism differs per major — 11 honors
