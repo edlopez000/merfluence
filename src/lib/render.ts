@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify';
 import { ensureAccessibleName } from './a11y-name.js';
+import { centerMindmapLabels } from './mindmap-labels.js';
 import { loadMermaid, resolveMajor } from './mermaid-registry.js';
 
 /**
@@ -396,11 +397,14 @@ export async function renderDiagram({
 
     return mermaid.render(nextId(), trimmed);
   });
-  // Name the graphic before sanitizing, so DOMPurify stays the last pass over
-  // anything that reaches a reader's DOM. The cache path in the view runs the
-  // same two steps in the same order. Both are pure string work on the produced
-  // SVG, so they run outside the lock.
-  return { svg: sanitizeSvg(ensureAccessibleName(svg)), major: resolveMajor(versionPref) };
+  // Centre mindmap labels and name the graphic before sanitizing, so DOMPurify
+  // stays the last pass over anything that reaches a reader's DOM. The cache
+  // path in the view runs the same three steps in the same order. All are pure
+  // string work on the produced SVG, so they run outside the lock.
+  return {
+    svg: sanitizeSvg(ensureAccessibleName(centerMindmapLabels(svg))),
+    major: resolveMajor(versionPref),
+  };
 }
 
 /** Intrinsic pixel size of a rendered SVG, for sizing the iframe. */
