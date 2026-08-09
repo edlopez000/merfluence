@@ -15,6 +15,7 @@ import {
 import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
 import { download, exportPng } from '../lib/png-export.js';
+import { exportFilename } from '../lib/export-name.js';
 import { Stage } from '../components/Stage.jsx';
 import type { StageActions } from '../components/Stage.jsx';
 
@@ -76,11 +77,14 @@ function ViewActions({
     }
   };
 
+  // Named at click time, never memoised: the name carries a timestamp that has
+  // to be this click's, and the SVG it reads the diagram type off is replaced
+  // outright by a theme flip or a re-render.
   const saveSvg = () => {
     const svg = getSvg();
     if (!svg) return;
     const markup = new XMLSerializer().serializeToString(svg);
-    download(new Blob([markup], { type: 'image/svg+xml' }), 'diagram.svg');
+    download(new Blob([markup], { type: 'image/svg+xml' }), exportFilename(source, svg, 'svg'));
   };
 
   const savePng = async (background: string | null) => {
@@ -97,7 +101,7 @@ function ViewActions({
       // the image's onload runs in this same task, so without this the first
       // paint of "Exporting…" would already be behind part of the export.
       await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
-      await exportPng(svg, { background });
+      await exportPng(svg, { background, filename: exportFilename(source, svg, 'png') });
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
     } finally {

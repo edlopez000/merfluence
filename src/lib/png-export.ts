@@ -101,10 +101,18 @@ export function exportScaleFor(
  * dark-themed diagram's light text disappears. The reader picks per export; the
  * colour itself is resolved by the caller (see surfaceColor in host.ts) so this
  * module stays out of the theming business.
+ *
+ * `filename` is likewise the caller's call — deriving it needs the diagram
+ * source, which this module has no business knowing about (see export-name.ts).
+ * The default is what every export was called before there was a choice.
  */
 export async function exportPng(
   svgEl: SVGElement,
-  { scale = 2, background = null }: { scale?: number; background?: string | null } = {},
+  {
+    scale = 2,
+    background = null,
+    filename = 'diagram.png',
+  }: { scale?: number; background?: string | null; filename?: string } = {},
 ) {
   const clone = svgEl.cloneNode(true) as SVGElement;
   const { width, height } = naturalSize(svgEl);
@@ -147,5 +155,5 @@ export async function exportPng(
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('Could not rasterize the diagram');
-  download(blob, 'diagram.png');
+  download(blob, filename);
 }

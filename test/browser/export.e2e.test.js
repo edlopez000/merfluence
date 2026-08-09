@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderDiagram } from '../../src/lib/render.js';
 import { download, exportPng } from '../../src/lib/png-export.js';
+import { exportFilename } from '../../src/lib/export-name.js';
 
 /**
  * The reader view's in-browser export path. exportPng serializes the live SVG,
@@ -271,5 +272,52 @@ describe('download', () => {
     expect(created).toHaveLength(1);
     expect(created[0].download).toBe('my-diagram.png');
     expect(created[0].href).toContain('blob:stub');
+  });
+});
+
+/**
+ * The name derivation is unit-tested in test/export-name.test.js against SVG
+ * shapes we construct. This is the end-to-end half: real Mermaid, really
+ * rendered, really rasterized, so the assumption the fallback rests on — that
+ * Mermaid stamps the diagram type onto the root where a11y-name.js can move it
+ * to a place export-name.js reads — is checked against the renderer rather than
+ * against a fixture that agrees with us by construction.
+ */
+describe('derived export filenames', () => {
+  /** The `download` attribute of the anchor the export configures. */
+  async function nameFromExport(source) {
+    const created = [];
+    const realCreate = document.createElement.bind(document);
+    // Restored before returning, so a test that exports twice does not stack a
+    // spy on top of a spy — realCreate would then be the previous mock and the
+    // second call would recurse until the stack gave out.
+    const spy = vi.spyOn(document, 'createElement').mockImplementation((tag, ...rest) => {
+      const el = realCreate(tag, ...rest);
+      if (tag === 'a') created.push(el);
+      return el;
+    });
+
+    try {
+      const { svg } = await renderDiagram({ source, theme: 'light' });
+      const el = mountSvg(svg);
+      await exportPng(el, { filename: exportFilename(source, el, 'png') });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(created).toHaveLength(1);
+    return created[0].download;
+  }
+
+  it('names the PNG after the diagram title', async () => {
+    const name = await nameFromExport('---\ntitle: Deploy pipeline\n---\nflowchart TD\n  A --> B');
+    expect(name).toMatch(/^deploy-pipeline-\d{8}-\d{6}\.png$/);
+  });
+
+  it('falls back to the type Mermaid itself reports', async () => {
+    expect(await nameFromExport('flowchart TD\n  A --> B')).toMatch(/^flowchart-\d{8}-\d{6}\.png$/);
+    expect(await nameFromExport('sequenceDiagram\n  A->>B: hi')).toMatch(
+      /^sequence-\d{8}-\d{6}\.png$/,
+    );
   });
 });
