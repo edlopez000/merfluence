@@ -60,8 +60,11 @@ const SVG_ROLE = 'graphics-document document';
  * already ran it over at save time, so the second pass is the *common* one.
  * Without the marker that pass would read our own name as an author's and
  * promote the graphic to role="img".
+ *
+ * Exported because export-name.js has to make the same author-or-us distinction
+ * to know which attribute is holding the diagram type.
  */
-const NAMED_MARKER = 'data-mf-named';
+export const NAMED_MARKER = 'data-mf-named';
 
 /** Used when the type is missing or unrecognisable. Vague, but never wrong. */
 const GENERIC_LABEL = 'Diagram';

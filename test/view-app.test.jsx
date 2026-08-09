@@ -503,9 +503,8 @@ describe('toolbar: export menu', () => {
     fireEvent.click(btnByText(/^export/i));
     fireEvent.click(btnByText(/^svg$/i));
     expect(p.download).toHaveBeenCalledTimes(1);
-    const [blob, name] = p.download.mock.calls[0];
+    const [blob] = p.download.mock.calls[0];
     expect(blob).toBeInstanceOf(Blob);
-    expect(name).toBe('diagram.svg');
     expect(root().querySelector('.export-menu')).toBeNull();
 
     fireEvent.click(btnByText(/^export/i));
@@ -516,6 +515,26 @@ describe('toolbar: export menu', () => {
     await waitForPng();
     expect(p.exportPng).toHaveBeenCalledTimes(1);
     expect(p.exportPng.mock.calls[0][0].tagName.toLowerCase()).toBe('svg');
+  });
+
+  // Both exports used to be called `diagram`, so saving three of them produced
+  // `diagram (2).png`. What the name is built from is export-name.js's problem
+  // and is tested there; what this pins is the wiring — that the toolbar hands
+  // it the *source* (hence the title showing up) and the *stage's* SVG, and that
+  // both formats go through it.
+  it('names both downloads after the diagram, with a timestamp', async () => {
+    await mountReady('---\ntitle: Deploy pipeline\n---\nflowchart TD\n A-->B');
+
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(btnByText(/^svg$/i));
+    const svgName = p.download.mock.calls[0][1];
+    expect(svgName).toMatch(/^deploy-pipeline-\d{8}-\d{6}\.svg$/);
+
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(btnByText(/^png \(with background\)$/i));
+    await waitForPng();
+    const pngName = p.exportPng.mock.calls[0][1].filename;
+    expect(pngName).toMatch(/^deploy-pipeline-\d{8}-\d{6}\.png$/);
   });
 
   it('surfaces a PNG export failure', async () => {
@@ -559,7 +578,7 @@ describe('toolbar: PNG background choice', () => {
     // The diagram rendered dark, so the backdrop is resolved for dark too —
     // white behind a dark diagram is the unreadable case.
     expect(h.surfaceColor).toHaveBeenCalledWith('dark');
-    expect(p.exportPng.mock.calls[0][1]).toEqual({ background: 'surface-dark' });
+    expect(p.exportPng.mock.calls[0][1]).toMatchObject({ background: 'surface-dark' });
   });
 
   it('asks for no background at all on the transparent variant', async () => {
@@ -569,8 +588,9 @@ describe('toolbar: PNG background choice', () => {
     fireEvent.click(btnByText(/^png \(transparent\)$/i));
     await waitForPng();
 
-    // null, not a colour: this is the export that has to stay alpha-zero.
-    expect(p.exportPng.mock.calls[0][1]).toEqual({ background: null });
+    // null, not a colour: this is the export that has to stay alpha-zero. An
+    // absent key would default to null too, so assert the key is really there.
+    expect(p.exportPng.mock.calls[0][1]).toHaveProperty('background', null);
   });
 });
 
