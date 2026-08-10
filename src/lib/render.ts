@@ -31,7 +31,15 @@ export const MAX_SOURCE_CHARS = 50000;
  * With htmlLabels off there is no legitimate <foreignObject>, so the profile
  * stripping it costs us nothing.
  */
-function baseConfig({ theme, useMaxWidth }: { theme: string; useMaxWidth: boolean }) {
+function baseConfig({ theme }: { theme: string }) {
+  // Fixed, not the "Keep full width" setting any more. That option is now purely
+  // a CSS class (.no-shrink, see src/view/index.html), because since #147 the
+  // stylesheet owns display width in every mode: `width: var(--diagram-width)`
+  // from the viewBox, with max-width forced on or off by !important. Nothing
+  // reads the width/height attributes Mermaid writes, so varying them only cost
+  // a re-render per toggle — and the useMaxWidth:true shape (width="100%" plus
+  // an inline max-width) is the one those rules are written against.
+  const useMaxWidth = true;
   return {
     startOnLoad: false,
     securityLevel: 'strict',
@@ -56,8 +64,8 @@ function baseConfig({ theme, useMaxWidth }: { theme: string; useMaxWidth: boolea
     gantt: { useMaxWidth },
     pie: { useMaxWidth },
     // The rest of the template types. Every section below exposes useMaxWidth in
-    // Mermaid 11, so the "Keep full width" toggle reaches them too. Keys absent in
-    // major 10 (kanban/architecture/block) are simply ignored there.
+    // Mermaid 11. Keys absent in major 10 (kanban/architecture/block) are simply
+    // ignored there.
     mindmap: { useMaxWidth },
     timeline: { useMaxWidth },
     gitGraph: { useMaxWidth },
@@ -305,11 +313,12 @@ const lastInitByMajor = new Map<string, string>();
 function initializeOnce(
   mermaid: { initialize: (config: object) => void },
   major: string,
-  config: { theme: string; useMaxWidth: boolean },
+  config: { theme: string },
 ) {
   // The same normalization baseConfig applies, so 'light' and 'default' share
-  // a key rather than thrashing the memo.
-  const key = `${config.theme === 'dark' ? 'dark' : 'default'}|${config.useMaxWidth}`;
+  // a key rather than thrashing the memo. Theme is the only input: everything
+  // else baseConfig emits is constant.
+  const key = config.theme === 'dark' ? 'dark' : 'default';
   if (lastInitByMajor.get(major) === key) return;
   mermaid.initialize(baseConfig(config));
   lastInitByMajor.set(major, key);
@@ -362,7 +371,7 @@ export async function validate(source: string, versionPref = 'auto') {
   enforceSourceLimit(source);
   await withMermaidLock(async () => {
     const mermaid = await loadMermaid(versionPref);
-    initializeOnce(mermaid, resolveMajor(versionPref), { theme: 'default', useMaxWidth: true });
+    initializeOnce(mermaid, resolveMajor(versionPref), { theme: 'default' });
     await mermaid.parse(source);
   });
 }
@@ -372,12 +381,10 @@ export async function renderDiagram({
   source,
   versionPref = 'auto',
   theme = 'light',
-  useMaxWidth = true,
 }: {
   source: string;
   versionPref?: string;
   theme?: string;
-  useMaxWidth?: boolean;
 }): Promise<{ svg: string; major: string }> {
   const trimmed = (source ?? '').trim();
   if (!trimmed) throw new Error('Diagram is empty');
@@ -386,7 +393,7 @@ export async function renderDiagram({
   const major = resolveMajor(versionPref);
   const { svg } = await withMermaidLock(async () => {
     const mermaid = await loadMermaid(versionPref);
-    initializeOnce(mermaid, major, { theme, useMaxWidth });
+    initializeOnce(mermaid, major, { theme });
 
     // Major 10 doesn't honor suppressErrorRendering, so a syntax error inside
     // render() would leave an orphan <div id="dmmd-..."> pinned to the document

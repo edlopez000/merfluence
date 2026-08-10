@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderDiagram } from '../../src/lib/render.js';
-import { download, exportPng } from '../../src/lib/png-export.js';
+import { download, exportPng, exportSvg } from '../../src/lib/png-export.js';
 import { exportFilename } from '../../src/lib/export-name.js';
 
 /**
@@ -62,6 +62,43 @@ describe('exportPng', () => {
     expect(blob.size).toBeGreaterThan(0);
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(revokeSpy).toHaveBeenCalledWith('blob:stub');
+  });
+});
+
+describe('exportSvg', () => {
+  it('downloads the diagram at its own size, not as a percentage', async () => {
+    const source = 'flowchart LR\n  A --> B --> C';
+    const { svg } = await renderDiagram({ source, theme: 'light' });
+    const el = mountSvg(svg);
+    // The premise: what Mermaid hands us is unusable as a standalone file.
+    expect(el.getAttribute('width')).toBe('100%');
+
+    exportSvg(el, 'diagram.svg');
+
+    const blob = createSpy.mock.calls[0][0];
+    expect(blob.type).toBe('image/svg+xml');
+    const markup = await blob.text();
+    const exported = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+    const { width, height } = el.viewBox.baseVal;
+    expect(exported.getAttribute('width')).toBe(String(width));
+    expect(exported.getAttribute('height')).toBe(String(height));
+    // Mermaid's inline clamp would be a second, competing size input in a
+    // document where nothing overrides it any more. (Only the root's own style
+    // — Mermaid's embedded stylesheet has an unrelated max-width on tooltips.)
+    expect(exported.style.maxWidth).toBe('');
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the SVG on the page untouched', async () => {
+    const { svg } = await renderDiagram({ source: 'flowchart TD\n  A --> B', theme: 'light' });
+    const el = mountSvg(svg);
+    const before = el.outerHTML;
+
+    exportSvg(el);
+
+    // It exports a clone: stamping the live SVG would fight the stage's width
+    // rules and freeze the diagram at whatever size it was when exported.
+    expect(el.outerHTML).toBe(before);
   });
 });
 

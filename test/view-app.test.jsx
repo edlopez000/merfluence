@@ -56,10 +56,10 @@ vi.mock('../src/lib/mermaid-registry.js', async (importActual) => {
 // covered directly by test/browser. Here we only need to prove the toolbar wires
 // the click to it with the stage's <svg>, so spy the two functions.
 const p = vi.hoisted(() => ({
-  download: vi.fn(),
+  exportSvg: vi.fn(),
   exportPng: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../src/lib/png-export.js', () => ({ download: p.download, exportPng: p.exportPng }));
+vi.mock('../src/lib/png-export.js', () => ({ exportSvg: p.exportSvg, exportPng: p.exportPng }));
 
 // jsdom implements neither observer the view relies on. Both stubs record and
 // are driven by hand: the IntersectionObserver to run the deferral, the
@@ -95,7 +95,7 @@ beforeEach(() => {
   // A recognizable stand-in for the resolved --ds-surface token; the real
   // light/dark resolution is covered in test/host.test.js.
   h.surfaceColor.mockImplementation((theme) => `surface-${theme}`);
-  p.download.mockReset();
+  p.exportSvg.mockReset();
   p.exportPng.mockReset().mockImplementation(() => Promise.resolve());
   r.loadMermaid.mockReset().mockResolvedValue({});
   ioInstances = [];
@@ -202,7 +202,10 @@ describe('cache miss', () => {
       source: 'flowchart TD\n A-->B',
       theme: 'light',
       mermaidVersion: 'auto',
-      useMaxWidth: true,
+      // Set, and deliberately not the default, to prove it does NOT reach the
+      // renderer: "Keep full width" is a CSS class on the Stage and the markup
+      // is the same either way, so passing it would only cost a re-render.
+      useMaxWidth: false,
     });
     h.renderDiagram.mockResolvedValue({
       svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect id="rect-fresh" width="10" height="10"/></svg>',
@@ -224,9 +227,9 @@ describe('cache miss', () => {
       source: 'flowchart TD\n A-->B',
       versionPref: 'auto',
       theme: 'light',
-      useMaxWidth: true,
     });
     expect(root().querySelector('#rect-fresh')).not.toBeNull();
+    expect(root().querySelector('.stage').className).toMatch(/no-shrink/);
   });
 });
 
@@ -502,9 +505,8 @@ describe('toolbar: export menu', () => {
 
     fireEvent.click(btnByText(/^export/i));
     fireEvent.click(btnByText(/^svg$/i));
-    expect(p.download).toHaveBeenCalledTimes(1);
-    const [blob] = p.download.mock.calls[0];
-    expect(blob).toBeInstanceOf(Blob);
+    expect(p.exportSvg).toHaveBeenCalledTimes(1);
+    expect(p.exportSvg.mock.calls[0][0].tagName.toLowerCase()).toBe('svg');
     expect(root().querySelector('.export-menu')).toBeNull();
 
     fireEvent.click(btnByText(/^export/i));
@@ -527,7 +529,7 @@ describe('toolbar: export menu', () => {
 
     fireEvent.click(btnByText(/^export/i));
     fireEvent.click(btnByText(/^svg$/i));
-    const svgName = p.download.mock.calls[0][1];
+    const svgName = p.exportSvg.mock.calls[0][1];
     expect(svgName).toMatch(/^deploy-pipeline-\d{8}-\d{6}\.svg$/);
 
     fireEvent.click(btnByText(/^export/i));

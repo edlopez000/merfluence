@@ -257,12 +257,12 @@ function Panel({ initial }: { initial: InitialConfig }) {
   // same tick as its setPreview. save() reuses the SVG when its own inputs
   // match, sparing one of the two save-time renders; keying on the whole tuple
   // (not just theme) is what makes an edit-then-quick-save reuse impossible to
-  // get wrong — any drift falls back to a fresh render.
+  // get wrong — any drift falls back to a fresh render. useMaxWidth is not in
+  // the tuple because it is not a render input: it only picks a CSS class.
   const previewRender = useRef<{
     source: string;
     mermaidVersion: string;
     theme: string;
-    useMaxWidth: boolean;
     svg: string;
   } | null>(null);
   // Whether Tab has been pressed in the source editor yet, which is when the
@@ -465,14 +465,12 @@ function Panel({ initial }: { initial: InitialConfig }) {
           source,
           versionPref: mermaidVersion,
           theme: resolvedTheme,
-          useMaxWidth,
         });
         if (!cancelled) {
           previewRender.current = {
             source,
             mermaidVersion,
             theme: resolvedTheme,
-            useMaxWidth,
             svg,
           };
           setPreview({ status: 'ready', svg });
@@ -486,7 +484,10 @@ function Panel({ initial }: { initial: InitialConfig }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [source, mermaidVersion, theme, useMaxWidth]);
+    // Deliberately not useMaxWidth: it reaches the diagram as a CSS class on the
+    // Stage, so the toggle re-styles the SVG already on screen instead of
+    // spending a render to produce identical markup.
+  }, [source, mermaidVersion, theme]);
 
   const insertTemplate = (id: string) => {
     const template = TEMPLATES.find((t) => t.id === id);
@@ -511,7 +512,6 @@ function Panel({ initial }: { initial: InitialConfig }) {
       return prev &&
         prev.source === source &&
         prev.mermaidVersion === mermaidVersion &&
-        prev.useMaxWidth === useMaxWidth &&
         prev.theme === renderTheme
         ? { svg: prev.svg }
         : null;
@@ -524,7 +524,6 @@ function Panel({ initial }: { initial: InitialConfig }) {
           source,
           versionPref: mermaidVersion,
           theme: 'light',
-          useMaxWidth,
         }));
       const dark =
         previewSvgFor('dark') ??
@@ -532,7 +531,6 @@ function Panel({ initial }: { initial: InitialConfig }) {
           source,
           versionPref: mermaidVersion,
           theme: 'dark',
-          useMaxWidth,
         }));
       // Stamp the semver that just did the rendering. Read here rather than in
       // the view, because this build is the one holding the renderer; a reader

@@ -124,6 +124,15 @@ export function Stage({
   toolbarExtras,
 }: {
   svg: string;
+  /**
+   * False shrinks nothing: the diagram lays out at its own width and is clipped
+   * by the column, reached by panning. This is the "Keep full width" option,
+   * inverted, and it is now purely a class switch — it adds `.no-shrink`, which
+   * drops the max-width clamps in src/view/index.html. It no longer reaches the
+   * renderer: the markup is identical either way, so a toggle only re-styles the
+   * SVG already on screen. Named after the Mermaid setting it used to carry,
+   * which is also the config key, so the two stay searchable together.
+   */
   useMaxWidth: boolean;
   height: number | null;
   /**
@@ -198,9 +207,9 @@ export function Stage({
   const maximized = () => document.fullscreenElement === stageRef.current || fallbackRef.current;
 
   // How much the browser has already shrunk the SVG to fit: its laid-out width
-  // over the intrinsic width in its viewBox. Mermaid's useMaxWidth and the
-  // `max-width: 100%` rules do this before any transform applies, so this is the
-  // factor the zoom ceiling has to be divided by (see maxZoomFor).
+  // over the intrinsic width in its viewBox. The `max-width: 100%` rules do this
+  // before any transform applies, so this is the factor the zoom ceiling has to
+  // be divided by (see maxZoomFor).
   //
   // Measured per gesture rather than cached, because the shrink changes under
   // us: entering fullscreen relaxes it from the page column to the whole screen,
@@ -223,11 +232,11 @@ export function Stage({
   };
 
   // The diagram's own width, published to CSS as --diagram-width so the stage
-  // rules can give the SVG a width the browser can actually resolve. With
-  // useMaxWidth on, Mermaid writes width="100%" and keeps the real number only
-  // in an inline max-width, and a percentage resolves to nothing inside .pan's
-  // shrink-to-fit box — so every wide diagram laid out at the 300px
-  // replaced-element default instead of the column's width (issue #141).
+  // rules can give the SVG a width the browser can actually resolve. Mermaid
+  // writes width="100%" and keeps the real number only in an inline max-width,
+  // and a percentage resolves to nothing inside .pan's shrink-to-fit box — so
+  // every wide diagram laid out at the 300px replaced-element default instead of
+  // the column's width (issue #141).
   //
   // Read from the viewBox, the same source displayScale uses above, so there is
   // one notion of "the diagram's width" rather than two that can disagree. In a

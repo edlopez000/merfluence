@@ -196,7 +196,6 @@ describe('live preview', () => {
       source: SOURCE,
       versionPref: 'auto',
       theme: 'light',
-      useMaxWidth: true,
     });
     expect(document.querySelector('.preview .stage .pan svg')).not.toBeNull();
   });
@@ -512,9 +511,14 @@ describe('save', () => {
 
     // Flip a render input after the preview landed, then save before the
     // debounce re-renders: the stored preview tuple no longer matches, so save
-    // must not trust it for either leg.
+    // must not trust it for either leg. The version, not the full-width
+    // checkbox — that one no longer changes the markup, so it is deliberately
+    // not in the tuple (see the reuse test below).
+    const versionSelect = selectByLabel('Mermaid');
     await act(async () => {
-      fireEvent.click(document.querySelector('.controls input[type="checkbox"]'));
+      fireEvent.change(versionSelect, {
+        target: { value: [...versionSelect.querySelectorAll('option')].at(-1).value },
+      });
     });
     await act(async () => {
       fireEvent.click(saveButton());
@@ -528,9 +532,38 @@ describe('save', () => {
     await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
     expect(darkStartedWhileLightPending).toBe(false);
     const payload = h.submitConfig.mock.calls[0][0];
-    expect(payload).toMatchObject({ useMaxWidth: false, cacheV: CACHE_VERSION });
+    expect(payload).toMatchObject({
+      mermaidVersion: versionSelect.value,
+      cacheV: CACHE_VERSION,
+    });
     expect(payload.svgLight).toContain('light-fresh');
     expect(payload.svgDark).toContain('dark-fresh');
+  });
+
+  it('reuses the preview render when only the full-width toggle changed', async () => {
+    await mountConfig();
+    await waitForPreview();
+    const previewCalls = h.renderDiagram.mock.calls.length;
+
+    // "Keep full width" adds a CSS class to the stage and nothing else, so the
+    // SVG on screen is already the SVG to cache. Flipping it must not throw away
+    // the preview render — it used to, costing two fresh renders on save.
+    await act(async () => {
+      fireEvent.click(document.querySelector('.controls input[type="checkbox"]'));
+    });
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
+
+    const saveCalls = h.renderDiagram.mock.calls.slice(previewCalls);
+    expect(saveCalls).toHaveLength(1); // the dark leg only, same as an untouched save
+    expect(saveCalls[0][0]).toMatchObject({ theme: 'dark' });
+    // The setting itself still persists — it is the reader's stage class.
+    expect(h.submitConfig.mock.calls[0][0]).toMatchObject({
+      useMaxWidth: false,
+      cacheV: CACHE_VERSION,
+    });
   });
 
   it('persists source alone (no cache) when a save-time render throws', async () => {
