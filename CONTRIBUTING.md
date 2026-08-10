@@ -120,9 +120,16 @@ the version or edit the changelog by hand:
 4. A follow-on job attaches `merfluence-X.Y.Z.cdx.json` — a CycloneDX SBOM of the
    production dependency tree at that tag — to the Release. Reproduce it from any
    checkout with `npm run sbom`; see [SECURITY.md](SECURITY.md#supply-chain).
+5. A second follow-on job deploys that tag to **production**, after re-running the
+   full gate set against it and pausing for the required reviewer on the
+   `production` environment. Merging the release PR is therefore what ships to
+   customers.
 
-Versioning is intentionally **decoupled from deployment**: Forge manifests carry
-no version, so the deploy pipeline in
-[`ci.yml`](.github/workflows/ci.yml) ships shipped-code
-changes independently, while tags and the changelog track the product's SemVer
-history.
+So the release PR **is** the batch: merge conventional PRs freely, and hold the
+release PR until the accumulated changes are worth a Marketplace version.
+
+Forge manifests carry no version, so a merge to `main` and a release play
+different roles. Every shippable merge deploys to **staging** on its own, with no
+human in the loop, which is continuous proof that `main` is deployable. The tag
+is what reaches production. See
+[docs/RUNBOOK.md](docs/RUNBOOK.md#staging--production) for the full topology.

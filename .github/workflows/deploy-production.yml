@@ -1,0 +1,203 @@
+name: Deploy to production
+
+# The only path to production. It runs per RELEASE, not per merge: ci.yml ships
+# every shippable push to main to staging, and this workflow ships the tag that
+# release-please cuts once a batch of those merges is ready to be a Marketplace
+# version. Before this split, every merge asked for a production approval — 15
+# deployment requests against 9 release tags — which trains the reviewer to
+# approve without looking.
+#
+# Why workflow_call rather than `on: release: published` or `on: push: tags`:
+# release-please tags and cuts its Release with secrets.GITHUB_TOKEN, and
+# "events triggered by the GITHUB_TOKEN will not create a new workflow run"
+# (only workflow_dispatch and repository_dispatch are exempt). Both of those
+# triggers would sit here and never fire. release-please.yml therefore calls
+# this workflow directly, gated on its own release_created output — the same
+# gate its sbom job already uses. The alternative, giving release-please a PAT
+# so its Release is not attributed to GITHUB_TOKEN, buys a long-lived
+# contents:write secret in a workflow that runs on every push, purely to make
+# an event fire. Not worth it.
+
+on:
+  # Invoked by release-please.yml when a release is actually cut.
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  # Manual deploy of any tag — the rollback path. It keeps everything the
+  # release path has (the gates below, the required-reviewer pause, the
+  # forge-deploy concurrency group, verify-deploy), which the local
+  # `npm run deploy:production` in docs/RUNBOOK.md does not.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy (e.g. v1.3.0)'
+        required: true
+        type: string
+
+# Least-privilege, as in every workflow here: only actions/checkout uses this
+# token, and only to read. The deploy job authenticates to Forge with the
+# FORGE_* secrets attached to the production environment, never with this token.
+permissions:
+  contents: read
+
+jobs:
+  # Re-run ci.yml's gate set against the TAG. main has moved on by now, and the
+  # release commit itself is shippable=false (it touches only package.json,
+  # package-lock.json and CHANGELOG.md), so nothing in ci.yml re-tests the exact
+  # tree about to ship. Every commit in the batch did pass these gates
+  # individually on its own push to main, which is stronger coverage than the
+  # single pre-promotion run this replaces — this job is the cheap check that the
+  # assembled tag is still green.
+  #
+  # One job, not four: a single npm ci and a single cache key. And no
+  # `environment:` — FORGE_EMAIL/FORGE_API_TOKEN are environment secrets, not
+  # repository secrets, so a job that declares no environment structurally cannot
+  # see the deploy credentials. Keep it that way.
+  #
+  # It is a separate job from `production` rather than steps in it because
+  # `environment: production` blocks the WHOLE job on the required reviewer.
+  # Gates living there would only run after someone had already approved; here,
+  # the approval prompt appears only once they pass.
+  gates:
+    name: Release gates
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned like every action in this repo: a tag is mutable, and v7 can
+      # be repointed at any commit by anyone who can push a tag. Renovate bumps
+      # these using the trailing version comment.
+      #
+      # ref: the tag, not the branch head — the same reason release-please.yml's
+      # sbom job checks out the tag. We must gate the bytes we are about to ship.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
+          # regression in 22.23.x. On 22.23.x the Forge CLI (still on node-fetch@2)
+          # throws ERR_STREAM_PREMATURE_CLOSE mid-request fetching Atlassian's
+          # OpenAPI schemas, failing lint AND deploy. Root cause is Node, not the
+          # CLI: nodejs/node#63989, Atlassian FRGE-1750. 22.23.1 and 24.17.0 are
+          # also on Forge's own Node blocklist. Bare "22" resolves to the latest
+          # (bad) 22.x, so keep it exact.
+          node-version: 22.22.3
+          cache: npm
+      - run: npm ci
+      # The browser test project renders in real Chromium (mermaid.render needs
+      # getBBox, absent in jsdom). --no-install uses the pinned devDependency
+      # rather than fetching one off the network mid-run; --with-deps pulls the
+      # OS libraries headless Chromium needs on the runner.
+      - name: Install Playwright Chromium
+        run: npx --no-install playwright install --with-deps chromium
+      # ci.yml's `corpus` job: both vitest projects plus the coverage floor.
+      - name: Tests + coverage
+        run: npm run test:coverage
+      # Build before size: size-limit measures the built entry chunks (see
+      # .size-limit.js), so they have to exist. The deploy job builds again on
+      # its own runner — artifacts are not passed between jobs here, because the
+      # thing that must ship is a build of the tag, not a build handed over from
+      # a job the reviewer approved after the fact.
+      - name: Both bundles build
+        run: npm run build
+      - name: Check bundle size
+        run: npm run size
+      # ci.yml's `lint` job, verbatim: ESLint, then tsc --noEmit, then Prettier.
+      # NOT `lint:forge` — that validates manifest.yml, needs Atlassian
+      # credentials this job must not hold, and already ran in staging for any
+      # push that touched manifest.yml (it is in ci.yml's `code` filter).
+      - name: ESLint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Prettier
+        run: npm run format:check
+      # ci.yml's `audit` job. Critical or high findings block the Marketplace
+      # update anyway; better to learn it here. Scoped to prod deps: only the
+      # runtime bundle ships to customer browsers. The SBOM half of that job is
+      # not duplicated — release-please.yml's sbom job already generates and
+      # attaches one for this exact tag.
+      - run: npm audit --omit=dev --audit-level=high
+
+  # The promotion itself. The pause for a human is NOT in this file: it comes
+  # from a required-reviewer rule on the `production` GitHub Environment
+  # (Settings → Environments → production). Self-review is permitted, so with a
+  # single maintainer the rule is a deliberate pause rather than a second pair of
+  # eyes — it stops an accidental promotion, not a determined one. It now fires
+  # once per release instead of once per merge, which is the point of this file.
+  #
+  # There is deliberately no `if: github.ref == 'refs/heads/main'` guard. The
+  # deleted ci.yml job needed one because the production environment had no
+  # deployment-branch policy; the replacement is that policy (main only), which
+  # FAILS a deploy from anywhere else. A stale `if:` would instead pass green
+  # while quietly shipping nothing, which is the worse failure during an
+  # incident.
+  production:
+    name: Promote to production
+    needs: [gates]
+    runs-on: ubuntu-latest
+    environment: production
+    # Same group as ci.yml's staging job. Concurrency groups are repository-
+    # scoped, so sharing the name across workflows still serialises a release
+    # deploy against an in-flight staging deploy — one deploy pipeline against
+    # the Forge app at a time. cancel-in-progress: false — a half-finished deploy
+    # is worse than a slow one.
+    concurrency:
+      group: forge-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
+          # regression in 22.23.x. On 22.23.x the Forge CLI (still on node-fetch@2)
+          # throws ERR_STREAM_PREMATURE_CLOSE mid-request fetching Atlassian's
+          # OpenAPI schemas, failing lint AND deploy. Root cause is Node, not the
+          # CLI: nodejs/node#63989, Atlassian FRGE-1750. 22.23.1 and 24.17.0 are
+          # also on Forge's own Node blocklist. Bare "22" resolves to the latest
+          # (bad) 22.x, so keep it exact.
+          node-version: 22.22.3
+          cache: npm
+      # Installs @forge/cli from the lockfile, rather than resolving an
+      # unreviewed release on the runner beside FORGE_API_TOKEN.
+      - run: npm ci
+      - run: npm run build
+      # --non-interactive can't prompt for the analytics choice, so set it
+      # explicitly on the fresh runner before deploying. Opt out.
+      #
+      # npx --no-install, not bare `forge`: the CLI is a devDependency, and a
+      # run: step does not get node_modules/.bin on PATH the way an npm script
+      # does. --no-install makes a missing CLI fail loudly instead of silently
+      # fetching one from the network, which is the point of pinning it.
+      - run: npx --no-install forge settings set usage-analytics false
+      # Record the installed version BEFORE deploy so the verify step below has a
+      # baseline. Non-fatal: the real gate is the verify step.
+      - name: Snapshot installed version
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: node scripts/verify-deploy.mjs production --snapshot
+      - name: forge deploy
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: npx --no-install forge deploy -e production --non-interactive
+      # forge deploy exiting 0 means "uploaded", not "the installation advanced".
+      # Poll install list until the production installation reports Up-to-date, so
+      # a deploy that lands a version the install never adopts fails here
+      # (blocking) instead of surfacing only when someone opens Confluence. If no
+      # production installation is visible, this warns and passes rather than
+      # blocking on a state it cannot verify.
+      - name: Verify installed version advanced
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: node scripts/verify-deploy.mjs production --verify
+      # Name the tag that shipped in the run summary. The job is reached two
+      # ways (a release, or a manual rollback dispatch) and the Actions UI shows
+      # the ref it ran ON — main — not the ref it deployed.
+      - name: Record what shipped
+        run: echo "🚀 Deployed **${{ inputs.tag }}** to production." >> "$GITHUB_STEP_SUMMARY"

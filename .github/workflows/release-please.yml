@@ -5,16 +5,20 @@ name: Release please
 # each push to main, release-please reads the Conventional Commits since the last
 # v* tag and maintains a standing "chore: release X.Y.Z" PR that bumps the
 # version + accumulates the changelog. Merging THAT PR tags vX.Y.Z, cuts a GitHub
-# Release, commits CHANGELOG.md, and attaches a CycloneDX SBOM of the production
-# dependency tree to that Release. Nothing here publishes to npm (the package
-# is private) or deploys to Forge — ci.yml still owns the gated
-# staging -> production pipeline.
+# Release, commits CHANGELOG.md, attaches a CycloneDX SBOM of the production
+# dependency tree to that Release, and — via the `production` job below — ships
+# that tag to Forge. Nothing here publishes to npm (the package is private).
+# ci.yml still owns staging, which every shippable push to main reaches
+# unattended; this file owns the promotion to production.
 #
 # The release PR only touches package.json / package-lock.json / CHANGELOG.md, so
 # it passes the required Diagram-corpus and Dependency-audit checks like any
-# other PR. Merging it does bump package.json, which is in ci.yml's
-# `shippable` filter, so a release re-deploys a byte-identical bundle — an
-# accepted, deliberate redeploy point, not a bug.
+# other PR. That same narrowness means the merge commit is shippable=false in
+# ci.yml: `code` does not match, and the production-dependency fingerprint
+# excludes the root package's own version (scripts/prod-deps-fingerprint.mjs),
+# so the closures compare equal. staging therefore skips the release commit —
+# correctly, having already deployed every commit in the batch individually.
+# Production is reached from here instead, and does NOT consult `shippable`.
 
 on:
   push:
@@ -97,3 +101,26 @@ jobs:
         run: |
           cp sbom.cdx.json "merfluence-${TAG#v}.cdx.json"
           gh release upload "$TAG" "merfluence-${TAG#v}.cdx.json" --clobber
+
+  # Ship the tag that was just cut. This is the ONLY automatic route to
+  # production: ci.yml deploys staging on every shippable push to main, and the
+  # Marketplace version is minted here, once per release, instead of once per
+  # merge.
+  #
+  # Why the deploy is called from this file rather than triggered by the tag or
+  # the Release it just created: release-please acts as secrets.GITHUB_TOKEN
+  # above, and events triggered by that token do not start workflow runs. An
+  # `on: release: published` workflow would simply never fire. `release_created`
+  # is the same gate the sbom job uses; it is non-empty only on the push that
+  # merges the release PR.
+  #
+  # No `secrets: inherit`: FORGE_EMAIL/FORGE_API_TOKEN are attached to the
+  # production ENVIRONMENT, and the called workflow's deploy job resolves them
+  # from there. Inheriting would be a no-op that reads like a grant.
+  production:
+    name: Deploy the release to production
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
