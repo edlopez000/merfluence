@@ -25,6 +25,30 @@ on:
       tag:
         required: true
         type: string
+    # Declared, not passed. This block is load-bearing and its absence is what
+    # broke the v1.5.0 deploy: inside a workflow_call-invoked workflow the
+    # `secrets` context is CLOSED, so `secrets.FORGE_EMAIL` for a name that
+    # appears in neither this block nor a caller's `secrets:` resolves to the
+    # empty string — silently. Every step below still ran; forge just reported
+    # "Not logged in", and the snapshot step reported it first.
+    #
+    # `required: false` because release-please.yml cannot pass these and must not
+    # try. They live on the production ENVIRONMENT, and on.workflow_call has no
+    # `environment` keyword, so a caller has no way to read them — the calling job
+    # declares no environment and there are no repository-level copies. Declaring
+    # them here is what opens the context; the `environment: production` on the
+    # deploy job below is what fills it, and the environment's value wins over
+    # anything a caller could have supplied.
+    #
+    # The distinction that cost a release: `environment:` on the job governs the
+    # approval gate AND the secret values, but not whether the NAME resolves at
+    # all. The gate fired correctly on v1.5.0 while the values came through empty,
+    # which is exactly the shape of that split.
+    secrets:
+      FORGE_EMAIL:
+        required: false
+      FORGE_API_TOKEN:
+        required: false
   # Manual deploy of any tag — the rollback path. It keeps everything the
   # release path has (the gates below, the required-reviewer pause, the
   # forge-deploy concurrency group, verify-deploy), which the local

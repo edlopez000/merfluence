@@ -114,9 +114,19 @@ jobs:
   # is the same gate the sbom job uses; it is non-empty only on the push that
   # merges the release PR.
   #
-  # No `secrets: inherit`: FORGE_EMAIL/FORGE_API_TOKEN are attached to the
-  # production ENVIRONMENT, and the called workflow's deploy job resolves them
-  # from there. Inheriting would be a no-op that reads like a grant.
+  # Still no `secrets:` and no `secrets: inherit` here, but NOT for the reason
+  # this comment used to give. It claimed the called workflow's `environment:`
+  # made any forwarding a no-op; that was half right, and the half it got wrong
+  # cost the v1.5.0 deploy, which asked for approval and then failed "Not logged
+  # in" with empty credentials.
+  #
+  # What is actually true: this job genuinely cannot forward them. FORGE_EMAIL and
+  # FORGE_API_TOKEN exist only on the production environment, this job declares no
+  # environment, and on.workflow_call has no `environment` keyword — so there is
+  # nothing here to inherit, and `secrets: inherit` really would be an empty
+  # gesture. The part that was missing is on the other side: the called workflow
+  # has to DECLARE those names under on.workflow_call.secrets before a reference
+  # to them resolves at all. See the block in deploy-production.yml.
   production:
     name: Deploy the release to production
     needs: release-please
