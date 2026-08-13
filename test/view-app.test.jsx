@@ -706,6 +706,31 @@ describe('toolbar: zoom controls', () => {
     fireEvent.click(btnByLabel(/zoom in/i));
     expect(btnByLabel(/reset view/i).getAttribute('aria-label')).toBe('Reset view, currently 120%');
   });
+
+  // The zoom gesture's only mouse-discoverable surface. The .keys chip names it
+  // too, but only on :focus-visible, and the scroll-to-zoom pill only fires for
+  // someone who already scrolled and got the page instead — so a reader who
+  // hovers and clicks these buttons would otherwise never learn the shortcut.
+  it('names the scroll shortcut in the zoom buttons’ tooltips', async () => {
+    await mountReady();
+
+    // Either modifier: modifierLabel() reads navigator.userAgentData/platform and
+    // resolves to Ctrl under jsdom. Pinning the glyph would test the platform
+    // sniff, which host.test.js-style unit coverage owns, rather than the wording.
+    expect(btnByLabel(/^zoom in$/i).getAttribute('title')).toMatch(/(⌘|Ctrl) \+ scroll/);
+    expect(btnByLabel(/^zoom out$/i).getAttribute('title')).toMatch(/(⌘|Ctrl) \+ scroll/);
+  });
+
+  // The load-bearing half of the pair above. A future edit "helpfully" folding the
+  // tooltip into the accessible name would push a mouse-only gesture into what a
+  // screen-reader user hears for a button they reach by keyboard — and would put
+  // text in the name that is not in the visible label (WCAG 2.1 SC 2.5.3).
+  it('keeps the gesture out of the accessible name', async () => {
+    await mountReady();
+
+    expect(btnByLabel(/^zoom in$/i).getAttribute('aria-label')).toBe('Zoom in');
+    expect(btnByLabel(/^zoom out$/i).getAttribute('aria-label')).toBe('Zoom out');
+  });
 });
 
 describe('toolbar: fullscreen', () => {
