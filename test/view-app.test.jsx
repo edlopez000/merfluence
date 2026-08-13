@@ -80,9 +80,22 @@ class MockIntersectionObserver {
     this.disconnected = true;
   }
   // Test hook: pretend the watched element scrolled into view.
-  intersect() {
+  //
+  // The rects are optional because two features observe through this mock and
+  // want different things from it. The lazy-load deferral only reads
+  // isIntersecting, and every caller predates the rects; Stage's hint placement
+  // reads boundingClientRect/intersectionRect to work out how much of the stage
+  // is off screen. Defaulting to a zero box would silently give that second
+  // reader an empty intersection, which it correctly ignores — so callers that
+  // care pass real rects, and callers that don't are unaffected.
+  intersect({ boundingClientRect, intersectionRect } = {}) {
     this.cb(
-      this.elements.map((target) => ({ isIntersecting: true, target })),
+      this.elements.map((target) => ({
+        isIntersecting: true,
+        target,
+        boundingClientRect,
+        intersectionRect,
+      })),
       this,
     );
   }
@@ -854,25 +867,72 @@ describe('stage: scroll-to-zoom hint', () => {
     expect(root().querySelector('.zoom-hint').textContent).toMatch(/scroll to zoom/i);
   });
 
-  it('places itself on the cursor, not in the middle of the diagram', async () => {
-    // The stage is as tall as the diagram, so its centre is often scrolled well
-    // out of view in the host page — which we cannot measure from inside a
-    // cross-origin iframe. The cursor is the one point we know they can see.
+  // Stage observes its own element to learn which part of it the reader can see.
+  // Found by the element it watches rather than by index: the view mounts a second
+  // IntersectionObserver for the lazy-load deferral, and which one lands in the
+  // list first depends on the render path the test took to get here.
+  const stageObserver = (stage) => ioInstances.find((io) => io.elements.includes(stage));
+
+  it('sits in the bottom-right of the visible slice, not the diagram’s own bottom', async () => {
+    // The case the placement exists for. The stage is as tall as the diagram, so
+    // on a Natural-height diagram its own bottom-right corner is far below the
+    // host page's viewport — a pill anchored there is drawn where nobody can see
+    // it. IntersectionObserver's implicit root is the top-level viewport even
+    // cross-origin, so intersectionRect is the slice that is genuinely on screen.
     await mountReady();
     const stage = stageEl();
-    stage.getBoundingClientRect = () => ({
-      left: 20,
-      top: 40,
-      width: 800,
-      height: 2000, // a long diagram: centring would put the hint at y=1000
-    });
     fakeClock();
 
-    await keepScrolling(stage, { clientX: 320, clientY: 190 });
+    // A 2000px-tall stage with only a middle band on screen. The vertical inset is
+    // the one that matters in practice; the horizontal one is asserted too, to
+    // pin the arithmetic on both axes rather than only the axis that happens to
+    // be exercised.
+    await act(async () => {
+      stageObserver(stage).intersect({
+        boundingClientRect: { right: 800, bottom: 2000, width: 800, height: 2000 },
+        intersectionRect: { right: 750, bottom: 1400, width: 750, height: 800 },
+      });
+    });
+    await keepScrolling(stage);
 
     const style = root().querySelector('.zoom-hint').style;
-    expect(style.left).toBe('300px'); // 320 - 20
-    expect(style.top).toBe('150px'); // 190 - 40
+    expect(style.bottom).toBe('608px'); // 2000 - 1400 out of view, + the 8px gap
+    expect(style.right).toBe('58px'); //  800 -  750 out of view, + the 8px gap
+  });
+
+  it('leaves the CSS corner alone when the whole diagram is on screen', async () => {
+    // The common case, and the reason the inset is expressed as an addition to
+    // what CSS already says: a fully visible diagram wants the pill in its own
+    // bottom-right corner, which is where the stylesheet has already put it.
+    await mountReady();
+    const stage = stageEl();
+    fakeClock();
+
+    const box = { right: 800, bottom: 400, width: 800, height: 400 };
+    await act(async () => {
+      stageObserver(stage).intersect({ boundingClientRect: box, intersectionRect: box });
+    });
+    await keepScrolling(stage);
+
+    const style = root().querySelector('.zoom-hint').style;
+    expect(style.bottom).toBe('8px');
+    expect(style.right).toBe('8px');
+  });
+
+  it('writes no inline placement at all when nothing has been observed', async () => {
+    // The fallback, and it has to be a real one: browsers without
+    // IntersectionObserver never call back, and Stage must still show the hint
+    // somewhere sensible. Nothing inline means the .zoom-hint rule governs, which
+    // is the stage's own bottom-right corner.
+    await mountReady();
+    fakeClock();
+
+    await keepScrolling(stageEl());
+
+    expect(hintShown()).toBe(true);
+    const style = root().querySelector('.zoom-hint').style;
+    expect(style.bottom).toBe('');
+    expect(style.right).toBe('');
   });
 
   it('stays quiet for a single flick past the diagram', async () => {

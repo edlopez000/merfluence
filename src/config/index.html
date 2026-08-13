@@ -361,21 +361,25 @@
          alone, no visibility/display: it is aria-hidden and click-through
          already, so there is nothing left to hide.
 
-         top/left are a fallback only: placeHint writes the cursor's position
-         over them, because the stage is as tall as the diagram and its centre
-         is often nowhere near what the reader is looking at. */
+         right/bottom are the whole placement in the common case: a diagram that
+         fits on screen wants the pill in its own bottom-right corner and nothing
+         else. placeHint only ever ADDS to these two insets, by however much of
+         that corner is currently scrolled out of the reader's view — so "no
+         inline style at all" is the correct answer whenever the whole diagram is
+         visible, and is also the fallback when IntersectionObserver is missing.
+         Keep the 8px in step with HINT_MARGIN in Stage.tsx.
+
+         Corner, not centre and not the cursor: the cursor is where the reader is
+         looking, which is precisely where a label must not sit. */
       .zoom-hint {
         position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
+        right: 8px;
+        bottom: 8px;
         z-index: 2;
-        /* max-content, not auto: absolutely positioned, the available width is
-           whatever is left between `left` and the stage edge, so a pill placed
-           near a corner would wrap to a sliver — and placeHint measures
-           offsetWidth to do the clamping, so that narrower width would then feed
-           back into the next placement. Sizing to the text makes the measurement
-           independent of where it last sat. */
+        /* max-content, not auto: positioned from the right edge, the available
+           width is whatever is left between there and the stage's left edge, so a
+           pill sitting in a corner would otherwise wrap to a sliver. Sizing to
+           the text keeps it on one line wherever it ends up. */
         width: max-content;
         max-width: calc(100% - 16px);
         text-align: center;

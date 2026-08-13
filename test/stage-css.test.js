@@ -94,3 +94,37 @@ describe('the scroll-to-zoom hint never intercepts a drag', () => {
     });
   }
 });
+
+/**
+ * The hint is anchored from the bottom-right, and Stage's placeHint depends on
+ * that being where it starts from: it writes `right`/`bottom` insets that are the
+ * CSS gap PLUS however much of that corner is scrolled out of view, so a rule
+ * anchored from `top`/`left` would make every inset it computes meaningless.
+ *
+ * A centring transform is checked for separately because it does not conflict
+ * with `right`/`bottom` loudly — it would silently shift the pill half its own
+ * size past the corner, which reads as a styling quirk rather than the broken
+ * placement contract it actually is.
+ */
+describe('the scroll-to-zoom hint is anchored to the bottom-right corner', () => {
+  for (const [name, css] of Object.entries(shells)) {
+    describe(name, () => {
+      it('positions from the bottom and right edges', () => {
+        const rule = zoomHintRule(css);
+        expect(rule, `${name} declares .zoom-hint`).not.toBeNull();
+        expect(rule).toMatch(/right:\s*8px/);
+        expect(rule).toMatch(/bottom:\s*8px/);
+      });
+
+      it('does not also anchor from the top or left', () => {
+        const rule = zoomHintRule(css) ?? '';
+        expect(rule).not.toMatch(/(^|[\s;]) top:/);
+        expect(rule).not.toMatch(/(^|[\s;]) left:/);
+      });
+
+      it('does not re-centre itself with a transform', () => {
+        expect(zoomHintRule(css) ?? '').not.toMatch(/transform/);
+      });
+    });
+  }
+});

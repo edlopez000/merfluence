@@ -133,6 +133,12 @@ const HINT_DWELL_MS = 250;
 const HINT_IDLE_MS = 1000;
 const HINT_LINGER_MS = 1800;
 
+// The pill's gap from the corner it sits in. Must match the `right`/`bottom` in
+// the .zoom-hint rule in both HTML shells: placeHint only ever *adds* to that
+// gap, so the two have to agree or a diagram that scrolls into full view would
+// shift the pill instead of leaving it exactly where CSS already put it.
+const HINT_MARGIN = 8;
+
 // What to call the modifier. The wheel handler accepts ctrlKey or metaKey on
 // every platform, so this is purely the name we print — but printing the wrong
 // one is worse than printing neither, since the whole point is that the reader
@@ -235,6 +241,12 @@ export function Stage({
   const [hint, setHint] = useState(false);
   const hintTimer = useRef(0);
   const hintElRef = useRef<HTMLDivElement | null>(null);
+  // How far the stage's own bottom-right corner is past the edge of what the
+  // reader can actually see, in px, from the last non-empty observation (see the
+  // IntersectionObserver below). Both are >= 0, and both are 0 whenever the whole
+  // diagram is on screen — which is why null and {0,0} mean the same thing to
+  // placeHint, and why the CSS default is already correct for the common case.
+  const hintInset = useRef<{ right: number; bottom: number } | null>(null);
   // Set the moment the user zooms with the modifier — or with a trackpad pinch,
   // which the browser delivers as a ctrlKey wheel and so lands on the same
   // branch. They have found the gesture; never offer it again. In memory only,
@@ -433,6 +445,57 @@ export function Stage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Which part of the stage the reader can actually see, for placing the
+  // scroll-to-zoom hint (see placeHint).
+  //
+  // The stage is as tall as the diagram and the reader's iframe is sized to it,
+  // so on a Natural-height diagram the stage's own bottom-right corner can sit
+  // thousands of pixels below the host page's viewport. We cannot read the
+  // parent's scroll offset from a cross-origin iframe — but we do not need to.
+  // IntersectionObserver's implicit root IS the top-level viewport, across
+  // origins, and entry.intersectionRect reports the visible slice in our own
+  // coordinate space. That is the same mechanism the reader's lazy-load deferral
+  // already depends on (src/view/main.tsx), so it is load-bearing here twice.
+  //
+  // The dense threshold list is what keeps the value current: an observer fires
+  // on threshold crossings, not continuously, and a tall stage's visible *ratio*
+  // changes slowly, so a coarse list would leave the rect stale for hundreds of
+  // scrolled pixels. Even so this is deliberately an approximation — the pill has
+  // to land in the visible corner region, not on an exact pixel, and the gesture
+  // that shows it is itself a scroll, so a crossing has almost always just fired.
+  //
+  // Only non-empty intersections are recorded. A ratio-0 observation (the stage
+  // scrolled out of view entirely) would otherwise poison the ref with an inset
+  // measured against a zero rect, and the reader cannot be plain-scrolling over a
+  // diagram they cannot see.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    // Same guard as the deferral in src/view/main.tsx. Without support the ref
+    // stays null and the hint falls back to the stage's own corner, which is what
+    // the CSS says on its own.
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1];
+        if (!entry) return;
+        const { boundingClientRect: box, intersectionRect: seen } = entry;
+        // A real entry always carries both rects. Checked anyway because the
+        // absence of one is indistinguishable from a zero-area intersection, and
+        // both mean the same thing here: nothing worth measuring, keep the last
+        // good inset rather than compute one from an empty box.
+        if (!box || !seen || seen.width <= 0 || seen.height <= 0) return;
+        hintInset.current = {
+          right: Math.max(0, box.right - seen.right),
+          bottom: Math.max(0, box.bottom - seen.bottom),
+        };
+      },
+      { threshold: Array.from({ length: 101 }, (_, i) => i / 100) },
+    );
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
+
   // autoFit's own trigger: the diagram's box changed, so the view last computed
   // for it is stale. One rule covers every case — a new Size preset, a re-render
   // into different source, the full-width toggle, the very first diagram to land
@@ -629,33 +692,35 @@ export function Stage({
       // longer collapses to nothing once the zoom is large.
       zoomTo(zoomRef.current * Math.pow(ZOOM_STEP, -delta / 100), anchor.x, anchor.y);
     };
-    // Place the hint on the cursor rather than in the middle of the stage. The
-    // stage is as tall as the diagram and the reader's iframe is sized to it, so
-    // its centre can sit far outside the part of the page anyone is actually
-    // looking at — and being cross-origin we cannot read the parent's scroll to
-    // do better. The cursor is, by definition, where they are looking. Clamped to
-    // the stage so the pill never hangs off a corner; measured from the element
-    // itself, which lays out at opacity 0 like any other.
-    const placeHint = (x: number, y: number) => {
+    // Pin the hint to the bottom-right of the part of the diagram the reader can
+    // see. Not the cursor: the pill would land on top of whatever they are
+    // scrolling over, which is the one place a label must not be. Not the stage's
+    // own corner either, at least not unconditionally — on a tall diagram that
+    // corner is far below the fold, and a hint nobody sees is worse than none.
+    //
+    // CSS already anchors the pill 8px off the stage's bottom-right, so this only
+    // has to add however much of that corner is currently out of view (the
+    // observer above), expressed as extra inset from the same two edges. Fully
+    // visible means both are 0 and the CSS default stands untouched — no inline
+    // style at all, which is also the no-IntersectionObserver fallback.
+    //
+    // Anchoring by right/bottom rather than left/top is what lets this drop the
+    // old clamp: a box positioned from those edges cannot hang off them, so there
+    // is nothing to measure the pill against and no offsetWidth read here. The
+    // left/top overrun that remains is handled in CSS by max-width.
+    const placeHint = () => {
       const el = hintElRef.current;
-      const rect = stageRef.current?.getBoundingClientRect();
-      if (!el || !rect) return;
-      const fit = (v: number, half: number, size: number) => {
-        const margin = half + 8;
-        // Nothing sensible to clamp to when the stage is narrower than the pill.
-        return size < margin * 2 ? size / 2 : Math.min(Math.max(v, margin), size - margin);
-      };
-      el.style.left = `${fit(x - rect.left, el.offsetWidth / 2, rect.width)}px`;
-      el.style.top = `${fit(y - rect.top, el.offsetHeight / 2, rect.height)}px`;
+      if (!el) return;
+      const inset = hintInset.current;
+      el.style.right = inset ? `${inset.right + HINT_MARGIN}px` : '';
+      el.style.bottom = inset ? `${inset.bottom + HINT_MARGIN}px` : '';
     };
-    const showHint = (x: number, y: number) => {
-      // Only when it first appears. Every plain wheel past the dwell lands here,
-      // and placeHint measures two live rects — doing that per event is the
-      // synchronous-layout-per-wheel problem the coalescing above exists to
-      // avoid. Leaving the pill where it appeared is also the better behaviour:
-      // a label that chases the cursor is harder to read than one that holds
-      // still. A non-zero timer is exactly "currently showing".
-      if (!hintTimer.current) placeHint(x, y);
+    const showHint = () => {
+      // Only when it first appears. Leaving the pill where it landed is the
+      // better behaviour — a label that moves while you read it is harder to read
+      // than one that holds still — and it means a long gesture re-places nothing.
+      // A non-zero timer is exactly "currently showing".
+      if (!hintTimer.current) placeHint();
       setHint(true);
       clearTimeout(hintTimer.current);
       hintTimer.current = window.setTimeout(() => {
@@ -681,8 +746,10 @@ export function Stage({
     // scroll-past never reaches it.
     //
     // Date.now(), not event.timeStamp: both are fine at this resolution, and
-    // this one moves under fake timers, so the dwell is testable.
-    const noteScrollIntent = (event: WheelEvent) => {
+    // this one moves under fake timers, so the dwell is testable. The event
+    // itself is not needed — the pill is placed from the visible box, not the
+    // pointer — so this reads the clock and nothing else.
+    const noteScrollIntent = () => {
       if (learned.current || maximized()) return;
       const now = Date.now();
       // A gap means the last gesture ended; this event opens a new one.
@@ -690,7 +757,7 @@ export function Stage({
       lastAt = now;
       // Still the opening flick. This is where the scroll-past case leaves.
       if (now - gestureAt < HINT_DWELL_MS) return;
-      showHint(event.clientX, event.clientY);
+      showHint();
     };
     const onWheel = (event: WheelEvent) => {
       // Inline: require Ctrl/⌘ so a plain scroll still moves the page. Maximized:
@@ -700,7 +767,7 @@ export function Stage({
         // preventDefault: this branch must stay a pure observer. The moment it
         // consumes the event we have built the scroll trap the hint exists to
         // avoid. test/view-app.test.jsx asserts the event goes through uncancelled.
-        noteScrollIntent(event);
+        noteScrollIntent();
         return;
       }
       // They found it, so stop offering it — including via a trackpad pinch,
@@ -976,10 +1043,11 @@ export function Stage({
             scrolled over the diagram, the page moved instead, and nothing else
             on screen says the diagram zooms at all. The page still scrolls:
             this is a label, not a scroll trap (see noteScrollIntent). Inside
-            .stage so it shares the clipping frame the cursor coords are measured
-            against (see placeHint). aria-hidden for the reason .keys carries it —
-            it teaches a pointer gesture, and the stage's aria-label already
-            names the keyboard route, which is the one that matters here. */}
+            .stage because .stage is the containing block its bottom-right corner
+            is measured from (see placeHint). aria-hidden for the reason .keys
+            carries it — it teaches a pointer gesture, and the stage's aria-label
+            already names the keyboard route, which is the one that matters
+            here. */}
         <div ref={hintElRef} className={`zoom-hint${hint ? ' show' : ''}`} aria-hidden="true">
           {modifierLabel()} + scroll to zoom
         </div>
