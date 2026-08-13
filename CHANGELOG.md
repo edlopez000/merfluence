@@ -9,6 +9,29 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.5.0](https://github.com/edlopez000/merfluence/compare/v1.4.0...v1.5.0) (2026-08-13)
+
+
+### Features
+
+* highlight Mermaid syntax per dialect, themed with Confluence tokens ([#150](https://github.com/edlopez000/merfluence/issues/150)) ([83f4f2c](https://github.com/edlopez000/merfluence/commit/83f4f2cb522e193b29dd03d8afba29bf81dda35f))
+* name PNG and SVG exports after the diagram and the time ([#151](https://github.com/edlopez000/merfluence/issues/151)) ([2d57152](https://github.com/edlopez000/merfluence/commit/2d57152f5e5a8b5f83ffb7649d79869578638545))
+* name the zoom gesture when a plain scroll crosses the diagram ([#158](https://github.com/edlopez000/merfluence/issues/158)) ([6efb8ed](https://github.com/edlopez000/merfluence/commit/6efb8ed2319af590034eb118f801c5923708a5cf))
+* offer a transparent or an opaque PNG export ([#149](https://github.com/edlopez000/merfluence/issues/149)) ([bb26750](https://github.com/edlopez000/merfluence/commit/bb26750a49428b310e5c3d391a2a8cfc5adbed82))
+
+
+### Bug Fixes
+
+* centre mindmap node labels, which Mermaid leaves outside the shape ([#152](https://github.com/edlopez000/merfluence/issues/152)) ([82add44](https://github.com/edlopez000/merfluence/commit/82add44dc192b0add75884e1f868f750d516ba0b))
+* name the scroll-to-zoom shortcut on the zoom buttons ([#162](https://github.com/edlopez000/merfluence/issues/162)) ([9b5c111](https://github.com/edlopez000/merfluence/commit/9b5c1111ec4447d01ddaf087069f5af0c3138cb5))
+* size diagrams and their PNG exports from the diagram, not the column ([#147](https://github.com/edlopez000/merfluence/issues/147)) ([168e28d](https://github.com/edlopez000/merfluence/commit/168e28df031dd8bb46842c45d0823bd83fc11b85))
+* stop re-rendering for the full-width toggle, and size the SVG export ([#156](https://github.com/edlopez000/merfluence/issues/156)) ([7c6f57f](https://github.com/edlopez000/merfluence/commit/7c6f57f3f505fbea9ce140aed0a74457f11c4050))
+
+
+### Reverts
+
+* remove the scroll-to-zoom pill, keeping the shortcut on the buttons ([#163](https://github.com/edlopez000/merfluence/issues/163)) ([3fb5ce9](https://github.com/edlopez000/merfluence/commit/3fb5ce91d5e48638dd3136fb5ba912c3ea22e7b5))
+
 ## [1.4.0](https://github.com/edlopez000/merfluence/compare/v1.3.0...v1.4.0) (2026-08-07)
 
 
