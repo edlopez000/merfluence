@@ -68,7 +68,27 @@ function StageToolbar({
     // and Tabbing to the toolbar would otherwise silently lose every key.
     <div className="toolbar" role="toolbar" aria-label="Diagram actions" onKeyDown={onKeyDown}>
       {extras?.({ getSvg, setFailure })}
-      <button type="button" onClick={() => onZoom(1 / ZOOM_STEP)} aria-label="Zoom out">
+      {/* The gesture is named in the tooltip, not the accessible name. Three
+          reasons it belongs here and only here:
+
+          - A pointer gesture is noise in a button's name for a screen-reader
+            user, who reaches zoom by the keys the stage's aria-label already
+            lists. aria-label outranks title for the accessible name, so adding
+            this changes no name and leaves WCAG 2.5.3 alone.
+          - This is the one surface a *mouse* user gets. The .keys chip carries
+            the same fact but only on :focus-visible, and the scroll-to-zoom pill
+            only fires for someone who already tried scrolling and failed —
+            neither reaches the reader who hovers and clicks these buttons.
+          - No maximized variant needed, unlike .keys/.keys-fs. A plain wheel
+            zooms only when maximized, and the toolbar is a sibling of .stage, so
+            it is unreachable in exactly that mode — the modifier named here is
+            therefore always the truth wherever this tooltip can be read. */}
+      <button
+        type="button"
+        onClick={() => onZoom(1 / ZOOM_STEP)}
+        title={`Zoom out (${modifierLabel()} + scroll)`}
+        aria-label="Zoom out"
+      >
         &minus;
       </button>
       <button
@@ -85,7 +105,12 @@ function StageToolbar({
       >
         {Math.round(zoom * 100)}%
       </button>
-      <button type="button" onClick={() => onZoom(ZOOM_STEP)} aria-label="Zoom in">
+      <button
+        type="button"
+        onClick={() => onZoom(ZOOM_STEP)}
+        title={`Zoom in (${modifierLabel()} + scroll)`}
+        aria-label="Zoom in"
+      >
         +
       </button>
       <button type="button" onClick={onFullscreen}>
