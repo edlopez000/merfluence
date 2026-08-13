@@ -5,9 +5,13 @@ name: CI
 # renovate.json, which is where new Mermaid versions enter the repo.
 # A clean corpus means the syntax our customers already wrote still parses, so a
 # merge that touches shipped code ships to staging with no human in the loop.
-# Marketplace minor updates do not require re-approval — they trigger a
-# vulnerability scan that closes on its own — so upstream release to customer
-# browsers is under an hour.
+#
+# This file stops at staging. Production is deployed per RELEASE, by
+# deploy-production.yml, which release-please.yml calls once the standing
+# release PR is merged — so a batch of merges costs one Marketplace version and
+# one approval, not one of each per merge. Once a release does ship, Marketplace
+# minor updates need no re-approval (they trigger a vulnerability scan that
+# closes on its own), so it reaches customer browsers within about an hour.
 
 on:
   # No workflow-level paths filter, on purpose: the corpus and audit are required
@@ -361,10 +365,13 @@ jobs:
     name: Deploy to staging
     # Every quality gate is a hard dependency: corpus (tests+coverage+build), lint
     # (ESLint + Prettier), size (bundle-size budget), and audit. A failure in any
-    # skips this job — and, via needs: [staging], production too. lint and size are
-    # load-bearing here, not just on PRs: the production environment has no
-    # deployment-branch policy, so a direct push to main would otherwise deploy over
-    # a failed lint or an over-budget bundle.
+    # skips this job. lint and size are load-bearing here, not just on PRs: this
+    # deploy runs with no human in the loop, so a direct push to main would
+    # otherwise deploy over a failed lint or an over-budget bundle.
+    #
+    # These gates protect staging alone now. deploy-production.yml re-runs its own
+    # against the release tag, because by then main has moved on and the release
+    # commit itself is shippable=false.
     needs: [corpus, lint, size, audit, changes]
     # Deploy only a push to main that changed shipped code. The shippable check is
     # what makes a CI/test/docs-only merge skip the deploy; the branch/event guards
@@ -444,76 +451,8 @@ jobs:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: node scripts/verify-deploy.mjs staging --verify
-
-  # Production soaks in staging first, then this job runs — but the pause for a
-  # human is NOT in this file: it comes from a required-reviewer rule on the
-  # `production` GitHub Environment (Settings → Environments → production).
-  # Verified present 2026-07-16: one required reviewer, admins cannot bypass.
-  # Self-review is permitted, so with a single maintainer the rule is a
-  # deliberate pause rather than a second pair of eyes — it stops an accidental
-  # promotion, not a determined one.
-  #
-  # That environment has no deployment-branch policy, so the `if` below is the
-  # only thing keeping production deploys on main. Editing it is enough to ship
-  # from any branch; there is no second guard behind it.
-  production:
-    name: Promote to production
-    needs: [staging]
-    # The event_name check is redundant today — needs: [staging] already skips
-    # this when staging skips. It is here so the guard states its own intent
-    # instead of borrowing it from the needs graph, which someone will edit.
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: production
-    # Same group as staging: one deploy pipeline in flight at a time. staging
-    # has released the group by the time this starts (needs: [staging]), so
-    # sharing the group queues the next push rather than deadlocking this one.
-    concurrency:
-      group: forge-deploy
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
-          # regression in 22.23.x. On 22.23.x the Forge CLI (still on node-fetch@2)
-          # throws ERR_STREAM_PREMATURE_CLOSE mid-request fetching Atlassian's
-          # OpenAPI schemas, failing lint AND deploy. Root cause is Node, not the
-          # CLI: nodejs/node#63989, Atlassian FRGE-1750. 22.23.1 and 24.17.0 are
-          # also on Forge's own Node blocklist. Bare "22" resolves to the latest
-          # (bad) 22.x, so keep it exact.
-          node-version: 22.22.3
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      # --non-interactive can't prompt for the analytics choice, so set it
-      # explicitly on the fresh runner before deploying. Opt out.
-      #
-      # npx --no-install, not bare `forge`: the CLI is a devDependency now, and
-      # a run: step does not get node_modules/.bin on PATH the way an npm script
-      # does. --no-install makes a missing CLI fail loudly instead of silently
-      # fetching one from the network, which is the point of pinning it.
-      - run: npx --no-install forge settings set usage-analytics false
-      # Record the installed version BEFORE deploy so the verify step below has a
-      # baseline. Non-fatal: the real gate is the verify step.
-      - name: Snapshot installed version
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: node scripts/verify-deploy.mjs production --snapshot
-      - name: forge deploy
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: npx --no-install forge deploy -e production --non-interactive
-      # forge deploy exiting 0 means "uploaded", not "the installation advanced".
-      # Poll install list until the production installation reports Up-to-date, so
-      # a deploy that lands a version the install never adopts fails here
-      # (blocking) instead of surfacing only when someone opens Confluence. If no
-      # production installation is visible, this warns and passes rather than
-      # blocking on a state it cannot verify.
-      - name: Verify installed version advanced
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: node scripts/verify-deploy.mjs production --verify
+      # Staging is where main soaks. Promotion to production is NOT here: it is
+      # deploy-production.yml, called by release-please.yml when the release PR is
+      # merged, against the tag rather than the branch head. Adding a production
+      # job back to this file would restore the per-merge approval this split
+      # exists to remove.
