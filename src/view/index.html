@@ -227,58 +227,6 @@
         display: block;
       }
 
-      /* Shown for a moment when a plain scroll crosses the diagram. The page
-         still scrolls — that is deliberate and stays that way (see
-         noteScrollIntent in Stage.tsx); this only names the gesture that zooms
-         instead, because nothing else on screen does. pointer-events: none so it
-         never swallows a drag that crosses it, exactly like .keys. Opacity
-         alone, no visibility/display: it is aria-hidden and click-through
-         already, so there is nothing left to hide.
-
-         top/left are a fallback only: placeHint writes the cursor's position
-         over them, because the stage is as tall as the diagram and its centre
-         is often nowhere near what the reader is looking at. */
-      .zoom-hint {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 2;
-        /* max-content, not auto: absolutely positioned, the available width is
-           whatever is left between `left` and the stage edge, so a pill placed
-           near a corner would wrap to a sliver — and placeHint measures
-           offsetWidth to do the clamping, so that narrower width would then feed
-           back into the next placement. Sizing to the text makes the measurement
-           independent of where it last sat. */
-        width: max-content;
-        max-width: calc(100% - 16px);
-        text-align: center;
-        font-size: 13px;
-        line-height: 1.4;
-        color: var(--ds-text, #172b4d);
-        background: var(--ds-surface-overlay, #fff);
-        border: 1px solid var(--ds-border, #dfe1e6);
-        border-radius: 6px;
-        box-shadow: var(--ds-shadow-overlay, 0 4px 8px rgba(9, 30, 66, 0.15));
-        padding: 8px 14px;
-        pointer-events: none;
-        opacity: 0;
-      }
-      .zoom-hint.show {
-        opacity: 1;
-      }
-      /* Fades only for those who want motion; it snaps in and out for everyone
-         else. Out is slower than in: arriving should feel like an answer, and
-         leaving should not pull the eye back to it. */
-      @media (prefers-reduced-motion: no-preference) {
-        .zoom-hint {
-          transition: opacity 200ms ease-out;
-        }
-        .zoom-hint.show {
-          transition: opacity 90ms ease-out;
-        }
-      }
-
       /* Exit control, only visible when maximized (the toolbar is hidden there). */
       .fs-exit {
         display: none;

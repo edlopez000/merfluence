@@ -810,6 +810,28 @@ describe('stage: wheel zoom', () => {
     expect(zoomLabel()).toBe('100%');
   });
 
+  // The load-bearing one in this file. "Did not zoom" above is only half of it:
+  // the event must also reach the page uncancelled, or every diagram becomes a
+  // scroll trap and the Confluence page freezes around any one the cursor
+  // crosses. Nothing in the wheel handler may call preventDefault on this branch.
+  //
+  // Lived in the scroll-to-zoom hint's suite until the hint was withdrawn, and
+  // moved here rather than deleted with it: the guarantee predates that feature
+  // and outlives it.
+  it('lets a plain wheel through uncancelled so the host page still scrolls', async () => {
+    await mountReady();
+
+    let event;
+    await act(async () => {
+      event = new WheelEvent('wheel', { deltaY: 100, cancelable: true });
+      stageEl().dispatchEvent(event);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(zoomLabel()).toBe('100%'); // and it did not zoom either
+  });
+
   it('applies a burst of ticks once, summing the deltas', async () => {
     // The coalescing has to be exact, not approximate: the zoom is exponential
     // in the total delta, so summing before applying gives the same result the
@@ -832,149 +854,6 @@ describe('stage: wheel zoom', () => {
     });
 
     expect(zoomLabel()).toBe('120%'); // same as one -100 tick
-  });
-});
-
-/**
- * The hint that names ⌘/Ctrl + scroll.
- *
- * The behaviour under test is mostly a negative: a plain wheel over an inline
- * diagram must keep scrolling the Confluence page it sits in, exactly as it did
- * before the hint existed. The hint is a label drawn over a gesture we
- * deliberately do not claim, and the assertion that it stays uncancelled is the
- * one that keeps it that way.
- *
- * Only Date and the timeouts are faked: requestAnimationFrame has to stay real,
- * because the wheel() helper above awaits one to let a zoom land.
- */
-describe('stage: scroll-to-zoom hint', () => {
-  const HINT_DWELL_MS = 250;
-  const HINT_LINGER_MS = 1800;
-
-  const hintShown = () => root().querySelector('.zoom-hint')?.classList.contains('show') ?? false;
-
-  // Two plain wheels far enough apart to read as one continuing gesture — what
-  // someone does when they scroll, see the page move, and try again.
-  async function keepScrolling(el, at = { clientX: 0, clientY: 0 }) {
-    await wheel(el, { deltaY: 100, ...at });
-    await act(async () => {
-      vi.advanceTimersByTime(HINT_DWELL_MS + 50);
-    });
-    await wheel(el, { deltaY: 100, ...at });
-  }
-
-  const fakeClock = () => vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('names the gesture once a plain scroll keeps going over the diagram', async () => {
-    await mountReady();
-    fakeClock();
-
-    await keepScrolling(stageEl());
-
-    expect(hintShown()).toBe(true);
-    expect(root().querySelector('.zoom-hint').textContent).toMatch(/scroll to zoom/i);
-  });
-
-  it('places itself on the cursor, not in the middle of the diagram', async () => {
-    // The stage is as tall as the diagram, so its centre is often scrolled well
-    // out of view in the host page — which we cannot measure from inside a
-    // cross-origin iframe. The cursor is the one point we know they can see.
-    await mountReady();
-    const stage = stageEl();
-    stage.getBoundingClientRect = () => ({
-      left: 20,
-      top: 40,
-      width: 800,
-      height: 2000, // a long diagram: centring would put the hint at y=1000
-    });
-    fakeClock();
-
-    await keepScrolling(stage, { clientX: 320, clientY: 190 });
-
-    const style = root().querySelector('.zoom-hint').style;
-    expect(style.left).toBe('300px'); // 320 - 20
-    expect(style.top).toBe('150px'); // 190 - 40
-  });
-
-  it('stays quiet for a single flick past the diagram', async () => {
-    // The common case by far: a reader scrolling down a page whose cursor
-    // crosses a diagram on the way. One burst, then gone — no hint.
-    await mountReady();
-    fakeClock();
-
-    await wheel(stageEl(), { deltaY: 100 });
-    await act(async () => {
-      vi.advanceTimersByTime(HINT_DWELL_MS + 50);
-    });
-
-    expect(hintShown()).toBe(false);
-  });
-
-  it('never consumes the scroll, hint or no hint', async () => {
-    // The load-bearing one. If this ever fails, the hint has become the scroll
-    // trap it exists to avoid: the Confluence page would freeze around every
-    // diagram the cursor happens to cross.
-    await mountReady();
-    fakeClock();
-
-    await keepScrolling(stageEl());
-    expect(hintShown()).toBe(true);
-
-    let event;
-    await act(async () => {
-      event = new WheelEvent('wheel', { deltaY: 100, cancelable: true });
-      stageEl().dispatchEvent(event);
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    });
-
-    expect(event.defaultPrevented).toBe(false);
-    expect(zoomLabel()).toBe('100%'); // and it did not zoom either
-  });
-
-  it('drops the hint for good once the user zooms with the modifier', async () => {
-    await mountReady();
-    fakeClock();
-
-    await keepScrolling(stageEl());
-    expect(hintShown()).toBe(true);
-
-    // A trackpad pinch arrives as exactly this event, so it counts as learning
-    // the gesture too.
-    await wheel(stageEl(), { deltaY: -100, ctrlKey: true, clientX: 5, clientY: 5 });
-    expect(hintShown()).toBe(false);
-    expect(zoomLabel()).toBe('120%');
-
-    await keepScrolling(stageEl());
-    expect(hintShown()).toBe(false);
-  });
-
-  it('says nothing when maximized, where a plain wheel already zooms', async () => {
-    await mountReady();
-    setFullscreen(stageEl());
-    fakeClock();
-
-    await wheel(stageEl(), { deltaY: -100, clientX: 5, clientY: 5 });
-
-    expect(zoomLabel()).toBe('120%');
-    expect(hintShown()).toBe(false);
-  });
-
-  it('fades out on its own after the scrolling stops', async () => {
-    await mountReady();
-    fakeClock();
-
-    await keepScrolling(stageEl());
-    expect(hintShown()).toBe(true);
-
-    await act(async () => {
-      vi.advanceTimersByTime(HINT_LINGER_MS + 50);
-    });
-
-    expect(hintShown()).toBe(false);
   });
 });
 

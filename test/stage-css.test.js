@@ -45,12 +45,6 @@ function panRule(css) {
   return match ? match[1].replace(/\/\*[\s\S]*?\*\//g, '') : null;
 }
 
-/** The `.zoom-hint { … }` rule body, comments stripped. Same shape as panRule. */
-function zoomHintRule(css) {
-  const match = css.match(/^\s*\.zoom-hint\s*\{([\s\S]*?)\}/m);
-  return match ? match[1].replace(/\/\*[\s\S]*?\*\//g, '') : null;
-}
-
 describe('the pan layer is never compositor-promoted', () => {
   for (const [name, css] of Object.entries(shells)) {
     describe(name, () => {
@@ -77,20 +71,4 @@ describe('the pan layer is never compositor-promoted', () => {
     expect(shells['src/view/index.html']).toMatch(/NOT will-change/i);
     expect(shells['src/config/index.html']).toMatch(/NOT will-change/i);
   });
-});
-
-/**
- * The scroll-to-zoom hint sits on top of the diagram, so it is the one overlay
- * that could plausibly eat a pan. `.keys` solves this with `pointer-events:
- * none` and so must this — and in both shells, which duplicate the stage rules
- * and can only be kept in step by a test that reads both.
- */
-describe('the scroll-to-zoom hint never intercepts a drag', () => {
-  for (const [name, css] of Object.entries(shells)) {
-    it(`${name} declares .zoom-hint with pointer-events: none`, () => {
-      const rule = zoomHintRule(css);
-      expect(rule, `${name} declares .zoom-hint`).not.toBeNull();
-      expect(rule).toMatch(/pointer-events:\s*none/);
-    });
-  }
 });
