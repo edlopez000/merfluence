@@ -65,6 +65,43 @@ function naturalSize(svgEl: SVGElement) {
 }
 
 /**
+ * A detached copy of the diagram carrying its natural size as real attributes —
+ * the form both exports need, because each turns the SVG into a standalone
+ * document where the stage's CSS no longer applies.
+ *
+ * Mermaid emits `width="100%"` and keeps the real width only in an inline
+ * max-width, which is fine on the stage (see the --diagram-width rules in
+ * src/view/index.html) and useless anywhere else: a percentage has nothing to
+ * resolve against, so consumers fall back to their own default box. Stamping the
+ * viewBox's own numbers is what makes an exported file open at the size the
+ * diagram actually is. The inline max-width then equals the width just set and
+ * so never binds, but a second, competing size input is a thing to reason about
+ * for no benefit — the attributes are the only size an export should carry.
+ */
+function sizedClone(svgEl: SVGElement) {
+  const clone = svgEl.cloneNode(true) as SVGElement;
+  const { width, height } = naturalSize(svgEl);
+  clone.setAttribute('width', String(width));
+  clone.setAttribute('height', String(height));
+  clone.style.removeProperty('max-width');
+  return { clone, width, height };
+}
+
+/**
+ * The diagram as a standalone .svg download — the vector counterpart to
+ * exportPng, and the one export that stays resolution-independent.
+ *
+ * Serializes a sizedClone rather than the live SVG: the live one carries
+ * Mermaid's percentage width, which several editors import as a default-sized
+ * box instead of the diagram's own dimensions.
+ */
+export function exportSvg(svgEl: SVGElement, filename = 'diagram.svg') {
+  const { clone } = sizedClone(svgEl);
+  const markup = new XMLSerializer().serializeToString(clone);
+  download(new Blob([markup], { type: 'image/svg+xml' }), filename);
+}
+
+/**
  * The largest scale up to `wanted` that keeps the canvas inside both ceilings.
  *
  * Pure, so the arithmetic is unit-testable without a canvas. May return less
@@ -114,16 +151,7 @@ export async function exportPng(
     filename = 'diagram.png',
   }: { scale?: number; background?: string | null; filename?: string } = {},
 ) {
-  const clone = svgEl.cloneNode(true) as SVGElement;
-  const { width, height } = naturalSize(svgEl);
-  clone.setAttribute('width', String(width));
-  clone.setAttribute('height', String(height));
-  // Mermaid writes an inline max-width at the diagram's own width when
-  // useMaxWidth is on. It equals the width just set and so never binds, but the
-  // clone is about to be rendered as a standalone image document — leaving a
-  // second, competing size input in there is a thing to reason about for no
-  // benefit. The attributes are the only size the raster reads.
-  clone.style.removeProperty('max-width');
+  const { clone, width, height } = sizedClone(svgEl);
   scale = exportScaleFor({ width, height }, scale);
 
   const markup = new XMLSerializer().serializeToString(clone);

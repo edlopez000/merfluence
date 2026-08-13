@@ -37,9 +37,8 @@ export function clampZoom(z: number, maxZoom: number = MAX_ZOOM) {
  * `displayScale` — its laid-out width over its intrinsic (viewBox) width.
  *
  * MAX_ZOOM alone is a multiplier on whatever size the diagram is *displayed* at,
- * not on its real size, and Mermaid's useMaxWidth plus `max-width: 100%` shrink
- * a wide diagram to the column (or, maximized, to the screen) before the
- * transform ever applies. So a flat cap gives a big diagram *less* absolute
+ * not on its real size, and the `max-width: 100%` rules shrink a wide diagram to
+ * the column (or, maximized, to the screen) before the transform ever applies. So a flat cap gives a big diagram *less* absolute
  * magnification the bigger it gets — a 8000px diagram in a 760px column tops out
  * around 0.38x its natural size, i.e. unreadable. Dividing the cap by the shrink
  * restores the intended meaning: 400% is 400% of the diagram's own pixels, and

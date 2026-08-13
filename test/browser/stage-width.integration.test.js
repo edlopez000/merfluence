@@ -17,11 +17,16 @@ import viewHtml from '../../src/view/index.html?raw';
  *  - the CSS is the *shipped* CSS, pulled out of src/view/index.html rather
  *    than copied into the file (a copy would keep passing after the source
  *    stopped matching it), and
- *  - the SVGs are real `renderDiagram()` output, so both shapes Mermaid emits
- *    are covered: `width="100%"` + inline `max-width` with useMaxWidth on, and
- *    explicit `width`/`height` attributes with it off (see calculateSvgSizeAttrs
- *    in the Mermaid bundle). The second is what "Keep full width" renders, and
- *    a hand-written stub of the first would silently miss it.
+ *  - the SVGs are real `renderDiagram()` output, not hand-written stubs of what
+ *    Mermaid is assumed to emit.
+ *
+ * Both shapes Mermaid can produce are covered. Everything renders as
+ * `width="100%"` + an inline `max-width` now that useMaxWidth is fixed on, but
+ * a config cached by an older build holds the explicit `width`/`height` shape
+ * that useMaxWidth:false used to give (see calculateSvgSizeAttrs in the Mermaid
+ * bundle), and the reader still injects those verbatim. `asLegacyShape` below
+ * reproduces it from the same render, which is why no cache version bump was
+ * needed: the stylesheet overrides both.
  */
 
 // A stand-in for the macro column. The reader's own html/body rules are in the
@@ -107,16 +112,30 @@ function mountComponent(svg, { useMaxWidth = true } = {}) {
 // A cold Mermaid chunk load plus layout outruns vitest's 5s default on CI.
 const RENDER_TIMEOUT = 20_000;
 
+/**
+ * The same diagram in the shape an older build cached it in: the viewBox's
+ * own numbers as `width`/`height` attributes and no percentage, which is what
+ * Mermaid emitted under useMaxWidth:false. Derived from a real render rather
+ * than written by hand, so it stays a faithful stand-in for a stored cache.
+ */
+function asLegacyShape(svg) {
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  const el = doc.documentElement;
+  const box = el.getAttribute('viewBox').split(/\s+/).map(Number);
+  el.setAttribute('width', String(box[2]));
+  el.setAttribute('height', String(box[3]));
+  el.style.removeProperty('max-width');
+  return new XMLSerializer().serializeToString(el);
+}
+
 let wide;
-let wideFullWidth;
 let narrow;
 
 beforeAll(async () => {
-  // Rendered once and reused: these are the two Mermaid output shapes, and
-  // re-rendering them per case would triple the suite's runtime for nothing.
-  [wide, wideFullWidth, narrow] = await Promise.all([
+  // Rendered once and reused: re-rendering per case would multiply the suite's
+  // runtime for nothing.
+  [wide, narrow] = await Promise.all([
     renderDiagram({ source: WIDE }).then((r) => r.svg),
-    renderDiagram({ source: WIDE, useMaxWidth: false }).then((r) => r.svg),
     renderDiagram({ source: NARROW }).then((r) => r.svg),
   ]);
 }, RENDER_TIMEOUT);
@@ -138,10 +157,12 @@ describe('a diagram wider than the column', () => {
   });
 
   it('keeps its own width with "Keep full width", clipped rather than stretching', () => {
-    const { intrinsic, pan, svg, root, stage } = mount(wideFullWidth, { noShrink: true });
+    // The *same* markup as the case above — the toggle is a class and nothing
+    // else, so the class alone has to make the difference.
+    const { intrinsic, pan, svg, root, stage } = mount(wide, { noShrink: true });
 
-    // The toggle's whole purpose, and a no-op before the fix: the diagram is
-    // laid out at full size and the stage clips it.
+    // The toggle's whole purpose, and a no-op before #147: the diagram is laid
+    // out at full size and the stage clips it.
     expect(svg.width).toBeCloseTo(intrinsic, 0);
     expect(pan.width).toBeCloseTo(intrinsic, 0);
 
@@ -168,11 +189,32 @@ describe('the component and the stylesheet, together', () => {
   });
 
   it('leaves a full-width diagram at its own size', () => {
-    const svgEl = mountComponent(wideFullWidth, { useMaxWidth: false });
+    const svgEl = mountComponent(wide, { useMaxWidth: false });
 
     expect(svgEl.closest('.stage').classList.contains('no-shrink')).toBe(true);
     expect(svgEl.getBoundingClientRect().width).toBeCloseTo(svgEl.viewBox.baseVal.width, 0);
     expect(column.querySelector('.root').getBoundingClientRect().width).toBeCloseTo(COLUMN, 0);
+  });
+});
+
+describe('an SVG cached in the pre-toggle-split shape', () => {
+  // Why CACHE_VERSION was not bumped when "Keep full width" stopped reaching the
+  // renderer: a config cached with useMaxWidth off carries explicit px width and
+  // height, and the reader injects it verbatim. These rules have to override
+  // that as completely as they override the percentage shape, or every such page
+  // would keep opening full-width after the option was switched off.
+  it('shrinks to the column all the same, and still honours the class', () => {
+    const legacy = asLegacyShape(wide);
+    expect(legacy).not.toMatch(/width="100%"/);
+
+    const fit = mount(legacy);
+    expect(fit.intrinsic).toBeGreaterThan(COLUMN * 2);
+    expect(fit.svg.width).toBeCloseTo(COLUMN, 0);
+    column.remove();
+
+    const full = mount(legacy, { noShrink: true });
+    expect(full.svg.width).toBeCloseTo(full.intrinsic, 0);
+    expect(full.root.width).toBeCloseTo(COLUMN, 0);
   });
 });
 

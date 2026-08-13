@@ -56,18 +56,24 @@ describe('initialize memoization', () => {
     expect(fake.initialize).toHaveBeenCalledTimes(2);
   });
 
-  it('re-initializes when useMaxWidth changes', async () => {
-    await renderDiagram({ source: SOURCE, theme: 'light', useMaxWidth: true });
-    await renderDiagram({ source: SOURCE, theme: 'light', useMaxWidth: false });
-    expect(fake.initialize).toHaveBeenCalledTimes(2);
-  });
-
   it("treats validate's default theme and a light render as the same config", async () => {
     // baseConfig maps anything but 'dark' to the 'default' theme, so a light
     // render after a validate must not thrash the memo.
     await validate(SOURCE);
-    await renderDiagram({ source: SOURCE, theme: 'light', useMaxWidth: true });
+    await renderDiagram({ source: SOURCE, theme: 'light' });
     expect(fake.initialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('always initializes with useMaxWidth on', async () => {
+    // It used to vary with the "Keep full width" option, which put a second
+    // input in the memo key and re-rendered the diagram on every toggle. The
+    // stage's CSS overrides the SVG's width in both modes, so the markup was
+    // identical anyway and the option is now purely a class switch.
+    await renderDiagram({ source: SOURCE, theme: 'light' });
+    const config = fake.initialize.mock.calls[0][0];
+    for (const type of ['flowchart', 'sequence', 'mindmap', 'xyChart']) {
+      expect(config[type].useMaxWidth).toBe(true);
+    }
   });
 });
 

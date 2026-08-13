@@ -15,7 +15,7 @@ import {
 } from '../lib/host.js';
 import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
-import { download, exportPng } from '../lib/png-export.js';
+import { exportPng, exportSvg } from '../lib/png-export.js';
 import { exportFilename } from '../lib/export-name.js';
 import { Stage } from '../components/Stage.jsx';
 import type { StageActions } from '../components/Stage.jsx';
@@ -84,8 +84,7 @@ function ViewActions({
   const saveSvg = () => {
     const svg = getSvg();
     if (!svg) return;
-    const markup = new XMLSerializer().serializeToString(svg);
-    download(new Blob([markup], { type: 'image/svg+xml' }), exportFilename(source, svg, 'svg'));
+    exportSvg(svg, exportFilename(source, svg, 'svg'));
   };
 
   const savePng = async (background: string | null) => {
@@ -339,7 +338,6 @@ function App() {
           source: (config.source ?? '').trim(),
           versionPref: config.mermaidVersion,
           theme: resolveTheme(config.theme),
-          useMaxWidth: config.useMaxWidth !== false,
         });
         // This bundle is doing the rendering right now, so its semver is the
         // truthful label.

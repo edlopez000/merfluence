@@ -272,6 +272,9 @@
         max-width: 100% !important;
         height: auto;
       }
+      /* "Keep full width", which is a class switch and nothing else — the SVG
+         markup is the same in both modes, so these two rules are the whole of
+         it. */
       .stage.no-shrink .pan {
         max-width: none;
       }
@@ -285,8 +288,8 @@
       .stage.sized:not(:fullscreen):not(.maximized) .pan {
         max-width: none;
       }
-      /* !important beats the inline max-width/width Mermaid writes onto the SVG
-         when useMaxWidth is on. */
+      /* !important beats the inline max-width/width Mermaid writes onto the SVG,
+         and the --diagram-width rule above. */
       .stage.sized:not(:fullscreen):not(.maximized) svg {
         height: var(--diagram-height) !important;
         width: auto !important;

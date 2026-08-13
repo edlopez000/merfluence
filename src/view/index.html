@@ -82,12 +82,12 @@
            per frame IS the crispness; an SVG that renders as a fuzzy bitmap
            gives up the reason to ship SVG at all. */
       }
-      /* width is the fix for issue #141. With useMaxWidth on, Mermaid writes
-         width="100%" and keeps the real width only in an inline max-width — and
-         a percentage width has nothing to resolve against inside .pan's
-         shrink-to-fit box, so the SVG fell back to the replaced-element default
-         of 300x150 and the column width never reached the diagram. The variable
-         carries the viewBox's width, which Stage sets once the SVG lands (see
+      /* width is the fix for issue #141. Mermaid writes width="100%" and keeps
+         the real width only in an inline max-width — and a percentage width has
+         nothing to resolve against inside .pan's shrink-to-fit box, so the SVG
+         fell back to the replaced-element default of 300x150 and the column
+         width never reached the diagram. The variable carries the viewBox's
+         width, which Stage sets once the SVG lands (see
          src/components/Stage.tsx); with a real width in hand, .pan's fit-content
          resolves to the diagram's own width and max-width below clamps it to the
          column. The 100% fallback is the old behaviour, for an SVG with no
@@ -96,20 +96,28 @@
          !important because that inline max-width outranks any stylesheet rule,
          and it is the clamp that shrinks a wide diagram to the column — without
          it the default mode would lay out at full width and clip, i.e. behave
-         like no-shrink below. Same reason the .sized rules further down need it. */
+         like no-shrink below. Same reason the .sized rules further down need it.
+
+         These rules are why width is settled entirely here: they override the
+         SVG's own width/max-width in every mode, whichever shape Mermaid wrote
+         them in, so a cache written by an older build lays out the same as a
+         fresh render. */
       .stage svg {
         display: block;
         width: var(--diagram-width, 100%);
         max-width: 100% !important;
         height: auto;
       }
+      /* "Keep full width": lay the diagram out at its own width and let
+         .stage's overflow: hidden clip it, panning to reach the rest. These two
+         rules are the entire mechanism — the markup is identical to the default
+         mode's, so the class is what makes the difference. */
       .stage.no-shrink .pan {
         max-width: none;
       }
-      /* !important to beat the rule above, which now carries it. With
-         useMaxWidth off Mermaid emits explicit width/height attributes instead
-         of a percentage, so this mode always had a real width; dropping the
-         clamp is all it needs. */
+      /* !important only to beat the rule above, which now carries it. Mermaid's
+         own inline max-width sits at the diagram's own width, which is where
+         --diagram-width puts it anyway, so that one never binds either way. */
       .stage.no-shrink svg {
         max-width: none !important;
       }
@@ -130,11 +138,12 @@
       .stage.sized:not(:fullscreen):not(.maximized) .pan {
         max-width: none;
       }
-      /* !important beats the inline max-width/width Mermaid writes onto the SVG
-         when useMaxWidth is on. width:auto is only safe BECAUSE height is
-         definite here: Mermaid emits width="100%" and no height attribute, so
-         the viewBox ratio needs exactly one of the two fixed to resolve. Setting
-         both to auto leaves the SVG with no size at all (a blank diagram). */
+      /* !important beats the inline max-width/width Mermaid writes onto the SVG,
+         and the --diagram-width rule above. width:auto is only safe BECAUSE
+         height is definite here: Mermaid emits width="100%" and no height
+         attribute, so the viewBox ratio needs exactly one of the two fixed to
+         resolve. Setting both to auto leaves the SVG with no size at all (a
+         blank diagram). */
       .stage.sized:not(:fullscreen):not(.maximized) svg {
         height: var(--diagram-height) !important;
         width: auto !important;

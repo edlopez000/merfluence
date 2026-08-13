@@ -2,9 +2,11 @@
  * Cached-SVG shape stored in macro config.
  *
  * Rendering is the expensive part, and it is deterministic given
- * (source, mermaidVersion, theme, useMaxWidth). So the editor renders the
- * diagram to SVG once at save time — for both light and dark — and stores the
- * result in the page's own macro config. A reader whose config carries a cache
+ * (source, mermaidVersion, theme) — and nothing else: `useMaxWidth` and
+ * `height` are display settings applied as CSS to whatever was rendered, so
+ * neither can invalidate a cache entry. So the editor renders the diagram to
+ * SVG once at save time — for both light and dark — and stores the result in
+ * the page's own macro config. A reader whose config carries a cache
  * hit paints the diagram without loading Mermaid at all, which is the whole
  * point: on a busy page most diagrams never download the renderer.
  *
