@@ -116,6 +116,34 @@ const PAN_STEP_LARGE = 128;
 const ZOOM_EPSILON = 1e-4;
 const PAN_EPSILON = 0.5;
 
+// The ⌘/Ctrl + scroll hint, in ms. A plain wheel inline scrolls the page and
+// always will; these three numbers only decide when we say so. DWELL is how long
+// a plain-wheel gesture has to keep going before it reads as "trying to zoom"
+// rather than "scrolling past"; IDLE is the gap that ends a gesture, so the next
+// event starts a fresh one; LINGER is how long the hint stays after the last
+// plain wheel. See noteScrollIntent.
+//
+// IDLE is deliberately generous. A notched mouse wheel turned steadily delivers
+// ticks well inside any of these, but the person this hint is for is not
+// scrolling steadily — they scroll, watch the page move instead of the diagram,
+// and try again. Tighten it and each of those attempts is a fresh gesture that
+// never reaches the dwell, so the hint never appears for the one user it exists
+// to help. The cost of erring the other way is a small label that fades.
+const HINT_DWELL_MS = 250;
+const HINT_IDLE_MS = 1000;
+const HINT_LINGER_MS = 1800;
+
+// What to call the modifier. The wheel handler accepts ctrlKey or metaKey on
+// every platform, so this is purely the name we print — but printing the wrong
+// one is worse than printing neither, since the whole point is that the reader
+// can act on it. userAgentData first (platform is deprecated and frozen to
+// "MacIntel" on Apple silicon, which still matches); Ctrl when neither answers.
+function modifierLabel() {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform ?? nav.platform ?? '';
+  return /mac|iphone|ipad|ipod/i.test(platform) ? '⌘' : 'Ctrl';
+}
+
 export function Stage({
   svg,
   useMaxWidth,
@@ -200,6 +228,20 @@ export function Stage({
   // listeners and the maximized() predicate read.
   const [fallback, setFallback] = useState(false);
   const fallbackRef = useRef(false);
+
+  // The ⌘/Ctrl + scroll hint. Same shape as the pair above, for the same reason:
+  // state drives the class, and the ref is what the once-bound wheel listener
+  // reads and writes.
+  const [hint, setHint] = useState(false);
+  const hintTimer = useRef(0);
+  const hintElRef = useRef<HTMLDivElement | null>(null);
+  // Set the moment the user zooms with the modifier — or with a trackpad pinch,
+  // which the browser delivers as a ctrlKey wheel and so lands on the same
+  // branch. They have found the gesture; never offer it again. In memory only,
+  // and that is the right scope rather than a limitation: each macro renders in
+  // its own iframe, so this is already per-diagram, and remembering it any
+  // longer would mean storage this app deliberately does not have.
+  const learned = useRef(false);
 
   // "The diagram is filling the screen", by either route. Every branch that used
   // to test document.fullscreenElement goes through this instead. Reads only
@@ -572,6 +614,11 @@ export function Stage({
     let pendingDelta = 0;
     let anchor = { x: 0, y: 0 };
     let frame = 0;
+    // When the current plain-wheel gesture began, and when its last event
+    // arrived. Two timestamps, not one: the dwell is measured from the start of
+    // the gesture, the gap that ends a gesture from its most recent event.
+    let gestureAt = 0;
+    let lastAt = 0;
     const applyWheel = () => {
       frame = 0;
       const delta = pendingDelta;
@@ -582,10 +629,84 @@ export function Stage({
       // longer collapses to nothing once the zoom is large.
       zoomTo(zoomRef.current * Math.pow(ZOOM_STEP, -delta / 100), anchor.x, anchor.y);
     };
+    // Place the hint on the cursor rather than in the middle of the stage. The
+    // stage is as tall as the diagram and the reader's iframe is sized to it, so
+    // its centre can sit far outside the part of the page anyone is actually
+    // looking at — and being cross-origin we cannot read the parent's scroll to
+    // do better. The cursor is, by definition, where they are looking. Clamped to
+    // the stage so the pill never hangs off a corner; measured from the element
+    // itself, which lays out at opacity 0 like any other.
+    const placeHint = (x: number, y: number) => {
+      const el = hintElRef.current;
+      const rect = stageRef.current?.getBoundingClientRect();
+      if (!el || !rect) return;
+      const fit = (v: number, half: number, size: number) => {
+        const margin = half + 8;
+        // Nothing sensible to clamp to when the stage is narrower than the pill.
+        return size < margin * 2 ? size / 2 : Math.min(Math.max(v, margin), size - margin);
+      };
+      el.style.left = `${fit(x - rect.left, el.offsetWidth / 2, rect.width)}px`;
+      el.style.top = `${fit(y - rect.top, el.offsetHeight / 2, rect.height)}px`;
+    };
+    const showHint = (x: number, y: number) => {
+      // Only when it first appears. Every plain wheel past the dwell lands here,
+      // and placeHint measures two live rects — doing that per event is the
+      // synchronous-layout-per-wheel problem the coalescing above exists to
+      // avoid. Leaving the pill where it appeared is also the better behaviour:
+      // a label that chases the cursor is harder to read than one that holds
+      // still. A non-zero timer is exactly "currently showing".
+      if (!hintTimer.current) placeHint(x, y);
+      setHint(true);
+      clearTimeout(hintTimer.current);
+      hintTimer.current = window.setTimeout(() => {
+        hintTimer.current = 0;
+        setHint(false);
+      }, HINT_LINGER_MS);
+    };
+    const hideHint = () => {
+      clearTimeout(hintTimer.current);
+      hintTimer.current = 0;
+      setHint(false);
+    };
+    // A plain wheel inline scrolls the page, which is right and stays right —
+    // hijacking it would freeze a Confluence page around any diagram the cursor
+    // happened to cross. But nothing on screen tells a mouse user the diagram
+    // zooms at all: the shortcut chip is keyboard-only and shows on focus. So
+    // name the gesture here, at the one moment someone is reaching for it.
+    //
+    // The dwell rule is what separates the two readings of the same event.
+    // Scrolling past delivers one flick and the cursor moves on; trying to zoom
+    // means carrying on scrolling with the cursor parked on the diagram. So the
+    // hint waits for a gesture that is still going after HINT_DWELL_MS, and a
+    // scroll-past never reaches it.
+    //
+    // Date.now(), not event.timeStamp: both are fine at this resolution, and
+    // this one moves under fake timers, so the dwell is testable.
+    const noteScrollIntent = (event: WheelEvent) => {
+      if (learned.current || maximized()) return;
+      const now = Date.now();
+      // A gap means the last gesture ended; this event opens a new one.
+      if (now - lastAt > HINT_IDLE_MS) gestureAt = now;
+      lastAt = now;
+      // Still the opening flick. This is where the scroll-past case leaves.
+      if (now - gestureAt < HINT_DWELL_MS) return;
+      showHint(event.clientX, event.clientY);
+    };
     const onWheel = (event: WheelEvent) => {
       // Inline: require Ctrl/⌘ so a plain scroll still moves the page. Maximized:
       // nothing is behind the diagram, so a plain wheel zooms like an image viewer.
-      if (!maximized() && !event.ctrlKey && !event.metaKey) return;
+      if (!maximized() && !event.ctrlKey && !event.metaKey) {
+        // Deliberately before the return, and deliberately without
+        // preventDefault: this branch must stay a pure observer. The moment it
+        // consumes the event we have built the scroll trap the hint exists to
+        // avoid. test/view-app.test.jsx asserts the event goes through uncancelled.
+        noteScrollIntent(event);
+        return;
+      }
+      // They found it, so stop offering it — including via a trackpad pinch,
+      // which arrives here as a ctrlKey wheel.
+      learned.current = true;
+      hideHint();
       event.preventDefault();
       pendingDelta += event.deltaY;
       anchor = { x: event.clientX, y: event.clientY };
@@ -595,6 +716,7 @@ export function Stage({
     return () => {
       el.removeEventListener('wheel', onWheel);
       if (frame) cancelAnimationFrame(frame);
+      clearTimeout(hintTimer.current);
     };
     // Bound once, deliberately, like the observers above: zoomTo reaches the
     // current state through refs only, so closing over the first instance is
@@ -842,8 +964,24 @@ export function Stage({
             something is what a user already expects, so spending a third of the
             chip teaching it buys nothing. It stays in the aria-label. */}
         <div className="keys" aria-hidden="true">
-          <span className="keys-inline">↑↓←→ pan · +/− zoom · 0 reset · F full screen</span>
-          <span className="keys-fs">↑↓←→ pan · +/− zoom · 0 reset · F exit full screen</span>
+          <span className="keys-inline">
+            ↑↓←→ pan · +/− or {modifierLabel()} scroll zoom · 0 reset · F full screen
+          </span>
+          {/* No modifier named here: maximized, a plain wheel zooms. */}
+          <span className="keys-fs">
+            ↑↓←→ pan · +/− or scroll zoom · 0 reset · F exit full screen
+          </span>
+        </div>
+        {/* Names the gesture at the one moment someone reaches for it — they
+            scrolled over the diagram, the page moved instead, and nothing else
+            on screen says the diagram zooms at all. The page still scrolls:
+            this is a label, not a scroll trap (see noteScrollIntent). Inside
+            .stage so it shares the clipping frame the cursor coords are measured
+            against (see placeHint). aria-hidden for the reason .keys carries it —
+            it teaches a pointer gesture, and the stage's aria-label already
+            names the keyboard route, which is the one that matters here. */}
+        <div ref={hintElRef} className={`zoom-hint${hint ? ' show' : ''}`} aria-hidden="true">
+          {modifierLabel()} + scroll to zoom
         </div>
         {/* Lives inside .stage so it's part of the fullscreen element (the
             toolbar is a sibling and hidden in fullscreen). CSS shows it only
