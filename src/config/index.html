@@ -35,6 +35,16 @@
         padding: 12px;
         box-sizing: border-box;
       }
+      /* The whole-panel placeholder shown while the saved config is fetched,
+         before there is a form to render. Overrides the column direction above
+         so the spinner sits beside its label rather than on top of it. */
+      .panel.loading {
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        color: var(--ds-text-subtle, #44546f);
+        font-size: 14px;
+      }
 
       /* Shown while a file is dragged over the editor, so it's clear the file
          will be read and turned into a diagram here — not opened by the browser.
@@ -191,6 +201,10 @@
          instead of the pane scrolling, so a wheel or a drag reaches the diagram
          rather than the scrollbar. */
       .preview {
+        /* Positioned so .preview-busy anchors to the preview pane. Without
+           this the nearest positioned ancestor is .panel and the chip lands in
+           the corner of the whole modal, over the source editor. */
+        position: relative;
         flex: 1;
         min-height: 0;
         overflow: hidden;
@@ -198,6 +212,97 @@
         display: flex;
         align-items: stretch;
         justify-content: center;
+      }
+
+      /* Shown while a re-render is in flight. It overlays rather than replaces
+         because the diagram underneath stays live: the previous render, and
+         with it the reader's pan/zoom position, must survive a keystroke or a
+         template switch. Bottom-right, because top-right is the Stage
+         toolbar's corner (see .toolbar below). pointer-events:none so it can
+         never swallow a pan drag that starts under it. */
+      .preview-busy {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        z-index: 1;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border: 1px solid var(--ds-border, #dfe1e6);
+        border-radius: 4px;
+        background: var(--ds-surface-overlay, #fff);
+        color: var(--ds-text-subtle, #44546f);
+        font-size: 12px;
+        line-height: 1.4;
+        pointer-events: none;
+      }
+      /* A much longer delay than the shared .reveal below, because this chip is
+         the one case where the wait costs nothing: the previous diagram is
+         still on screen and still interactive, so saying nothing for a while is
+         strictly better than narrating work the user did not notice.
+         Measured in Chromium on warm engines, a template switch renders in
+         86-112ms (median 95), and a cold-ish one in 121-175ms. A threshold
+         inside that band is the worst setting available — it makes the chip
+         appear on some renders and not others, and intermittent flicker reads
+         as jank. 400ms clears the whole band, leaving the chip for the case it
+         was built for: an engine chunk still coming down over a real network. */
+      .preview-busy.reveal {
+        animation-delay: 400ms;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Busy indicators — duplicated verbatim in src/view/index.html.     */
+      /* Same reason as the Stage block below: the two shells share no      */
+      /* stylesheet. Keep the copies in step; test/shell-css.test.js checks.*/
+      /* ---------------------------------------------------------------- */
+
+      /* Animating `transform` (rather than, say, a border sweep) keeps this on
+         the compositor, so it goes on turning through a Mermaid render instead
+         of freezing on the frame the main thread stopped at — a spinner that
+         stalls during the wait it exists to cover is worse than none. */
+      .spinner {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border: 2px solid var(--ds-border, #dfe1e6);
+        border-top-color: var(--ds-text-subtle, #44546f);
+        border-radius: 50%;
+        animation: spin 700ms linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* A busy indicator mounts the moment work starts and unmounts when it
+         ends, so work that finishes inside the delay below never paints at
+         all. That is the whole anti-flash mechanism: no JS timer, no extra
+         state, no bundle cost. The fade matters as much as the delay — work
+         landing just past it would otherwise flash at full opacity for one
+         frame, where the ramp puts it in single-digit percent and it reads as
+         nothing.
+         150ms is calibrated for the whole-surface placeholders that use this
+         class bare (the editor mount, the reader's first load): they are the
+         only thing on screen, so the delay buys one un-flashed fast path and
+         anything longer is just a blank panel. Indicators that overlay content
+         which is still usable want a much longer delay and set their own — see
+         .preview-busy above.
+         Deliberately NOT `opacity: 0` + `forwards`: the resting value is the
+         visible one and the delay is carried by a `backwards` fill, so
+         anything that stops the animation — a reduced-motion rule, a browser
+         that skips it — falls back to "appears immediately" rather than
+         "never appears". An indicator that can silently vanish for a subset of
+         users is worse than one that occasionally shows early. */
+      .reveal {
+        opacity: 1;
+        animation: mf-reveal 160ms ease-out 150ms backwards;
+      }
+      @keyframes mf-reveal {
+        from {
+          opacity: 0;
+        }
       }
 
       /* ---------------------------------------------------------------- */
@@ -474,6 +579,19 @@
       @media (prefers-reduced-motion: reduce) {
         .toolbar {
           transition: none;
+        }
+        /* The ring goes static; the "Rendering…" text next to it is what
+           actually carries the meaning, so nothing is lost by stopping it. */
+        .spinner {
+          animation: none;
+        }
+        /* Zeroing the duration, not `animation: none`. The delay and the
+           `backwards` fill are load-bearing — killing the animation outright
+           would drop the anti-flash delay here, and would hide the indicator
+           entirely under any future rule with a zero resting opacity. This
+           removes the fade and keeps the timing. */
+        .reveal {
+          animation-duration: 1ms;
         }
       }
 

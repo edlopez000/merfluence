@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, waitFor } from '@testing-library/react';
+// Reached via EditorView.findFromDOM so a test can type through the real
+// CodeMirror instance, exercising the same onChange -> setSource path a user
+// does — the only source change that must still be debounced.
+import { EditorView } from '@codemirror/view';
 import { TEMPLATES } from '../src/lib/templates.js';
 import { LiveUrlError } from '../src/lib/live-url.js';
 import { CACHE_VERSION } from '../src/lib/cache.js';
@@ -163,8 +167,10 @@ async function mountConfig() {
   });
 }
 
-const saveButton = () =>
-  [...document.querySelectorAll('button')].find((b) => /save diagram/i.test(b.textContent));
+// Selected by position, not by label: the label reads "Saving…" while a save is
+// in flight, and a text match would silently return undefined there — turning
+// every `saveButton()?.disabled` assertion into a false pass.
+const saveButton = () => document.querySelector('.actions button.primary');
 
 /**
  * Dispatch a wheel event and let the zoom land. Stage coalesces wheel ticks
@@ -495,8 +501,21 @@ describe('save', () => {
     let releaseLight;
     let lightPending = false;
     let darkStartedWhileLightPending = false;
+    // Only save's own light leg is gated — it is the first light call once the
+    // click below is issued in the same act as the setting change. A setting
+    // change now also renders the preview immediately (it stopped waiting out
+    // the typing debounce), so a second, ungated light call arrives from that;
+    // gating it too would hang a render this test is not about, and counting it
+    // as "pending" would make the sequencing assertion below lie. In the real
+    // app the two are serialized by the lock in render.ts, which this bare mock
+    // does not model.
+    let lightCalls = 0;
     h.renderDiagram.mockImplementation(({ theme }) => {
       if (theme === 'light') {
+        lightCalls += 1;
+        if (lightCalls > 1) {
+          return Promise.resolve({ svg: '<svg data-theme="light-preview"><rect/></svg>' });
+        }
         lightPending = true;
         return new Promise((resolve) => {
           releaseLight = () => {
@@ -509,18 +528,18 @@ describe('save', () => {
       return Promise.resolve({ svg: '<svg data-theme="dark-fresh"><rect/></svg>' });
     });
 
-    // Flip a render input after the preview landed, then save before the
-    // debounce re-renders: the stored preview tuple no longer matches, so save
-    // must not trust it for either leg. The version, not the full-width
-    // checkbox — that one no longer changes the markup, so it is deliberately
-    // not in the tuple (see the reuse test below).
+    // Flip a render input after the preview landed, then save in the same act
+    // so the click lands before the re-render can update the stored tuple: the
+    // tuple no longer matches, so save must not trust it for either leg. Doing
+    // both in one act is what makes this deterministic — it no longer relies on
+    // a 300ms debounce being slower than the test. The version, not the
+    // full-width checkbox: that one no longer changes the markup, so it is
+    // deliberately not in the tuple (see the reuse test below).
     const versionSelect = selectByLabel('Mermaid');
     await act(async () => {
       fireEvent.change(versionSelect, {
         target: { value: [...versionSelect.querySelectorAll('option')].at(-1).value },
       });
-    });
-    await act(async () => {
       fireEvent.click(saveButton());
     });
 
@@ -1131,5 +1150,327 @@ describe('settings flow into the save payload', () => {
     );
     fireEvent.click(cancel);
     expect(h.closeConfig).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- The editor rendered in silence -----------------------------------------
+// Switching template, typing, or flipping theme left the *previous* diagram on
+// screen for the debounce plus the whole render, with nothing saying a new one
+// was coming. On a diagram type whose engine chunk has not loaded yet (kanban,
+// architecture, c4) that silence also covers a multi-megabyte fetch. The chip
+// overlays rather than replaces, because the render you are looking at — and
+// the pan and zoom you set on it — must survive a keystroke.
+describe('preview: in-flight indicator', () => {
+  /** A preview render that stays in flight until the test resolves it. */
+  function deferRender() {
+    let settle;
+    h.renderDiagram.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject };
+        }),
+    );
+    return {
+      finish: async (svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect id="next"/></svg>') => {
+        await act(async () => settle.resolve({ svg }));
+      },
+      fail: async (message) => {
+        await act(async () => settle.reject(new Error(message)));
+      },
+    };
+  }
+
+  const chip = () => document.querySelector('.preview-busy');
+  const previewPane = () => document.querySelector('.preview');
+
+  it('announces a re-render politely while it runs, then clears', async () => {
+    await mountConfig();
+    await waitForPreview();
+    expect(chip()).toBeNull();
+
+    const held = deferRender();
+    await act(async () => {
+      fireEvent.change(selectByLabel('Start from'), { target: { value: 'sequence' } });
+    });
+
+    await waitFor(() => expect(chip()).not.toBeNull());
+    expect(chip().getAttribute('role')).toBe('status');
+    expect(chip().textContent).toMatch(/rendering/i);
+    expect(chip().querySelector('.spinner').getAttribute('aria-hidden')).toBe('true');
+    // The pane itself is marked busy: that is the attribute meaning "this
+    // region's contents are being updated", which is exactly the claim here.
+    expect(previewPane().getAttribute('aria-busy')).toBe('true');
+
+    await held.finish();
+    await waitFor(() => expect(chip()).toBeNull());
+    expect(previewPane().getAttribute('aria-busy')).toBe('false');
+  });
+
+  // The load-bearing assertion for overlaying instead of replacing. If the
+  // Stage is ever unmounted for a re-render, this fails — and with it goes the
+  // user's zoom on every keystroke.
+  it('leaves the previous diagram mounted, zoomed and panned, while it renders', async () => {
+    await mountConfig();
+    await waitForPreview();
+    await stubRects({ stage: { width: 400, height: 300 }, pan: { width: 200, height: 150 } });
+
+    const before = document.querySelector('.preview .stage');
+    await wheel(before, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 });
+    const zoomed = document.querySelector('.preview .zoom-level')?.textContent;
+    const panned = document.querySelector('.preview .pan').style.transform;
+    const svgBefore = document.querySelector('.preview .pan').innerHTML;
+
+    const held = deferRender();
+    await act(async () => {
+      fireEvent.change(selectByLabel('Start from'), { target: { value: 'sequence' } });
+    });
+    await waitFor(() => expect(chip()).not.toBeNull());
+
+    // Same node, not a remount: React would hand back a different element if
+    // the ready branch had been swapped out and back.
+    expect(document.querySelector('.preview .stage')).toBe(before);
+    expect(document.querySelector('.preview .pan').innerHTML).toBe(svgBefore);
+    expect(document.querySelector('.preview .zoom-level')?.textContent).toBe(zoomed);
+    expect(document.querySelector('.preview .pan').style.transform).toBe(panned);
+
+    await held.finish();
+    await waitFor(() => expect(chip()).toBeNull());
+  });
+
+  it('does not double up on the first-ever render, which already says so', async () => {
+    const held = deferRender();
+    await mountConfig();
+
+    // The empty pane already reads "Rendering…" in the middle; a chip in the
+    // corner saying the same thing is noise.
+    await waitFor(() => expect(h.renderDiagram).toHaveBeenCalled());
+    expect(chip()).toBeNull();
+    expect(previewPane().textContent).toMatch(/rendering/i);
+
+    await held.finish();
+    await waitFor(() => expect(saveButton().disabled).toBe(false));
+  });
+
+  it('clears the chip when the render fails, leaving the error to the gutter', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    const held = deferRender();
+    await act(async () => {
+      fireEvent.change(selectByLabel('Start from'), { target: { value: 'sequence' } });
+    });
+    await waitFor(() => expect(chip()).not.toBeNull());
+
+    await held.fail('Parse error on line 2');
+    await waitFor(() => expect(chip()).toBeNull());
+    expect(previewPane().getAttribute('aria-busy')).toBe('false');
+    expect(document.querySelector('.diagnostic[role="alert"]')).not.toBeNull();
+  });
+});
+
+// --- Save ran two renders and a bridge call behind a live button -------------
+// The click produced nothing: no label change, no disabled state. The natural
+// response to a button that appears to have done nothing is to click it again,
+// which started a second pair of full renders on top of the first.
+describe('save: in-flight feedback', () => {
+  /** A submit that stays in flight until the test resolves it. */
+  function deferSubmit() {
+    let settle;
+    h.submitConfig.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject };
+        }),
+    );
+    return {
+      finish: async () => {
+        await act(async () => settle.resolve());
+      },
+      fail: async (message) => {
+        await act(async () => settle.reject(new Error(message)));
+      },
+    };
+  }
+
+  it('labels and disables the button for as long as the save runs', async () => {
+    const held = deferSubmit();
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    await waitFor(() => expect(saveButton().textContent).toMatch(/saving/i));
+    expect(saveButton().disabled).toBe(true);
+    expect(saveButton().getAttribute('aria-busy')).toBe('true');
+
+    await held.finish();
+    await waitFor(() => expect(saveButton().textContent).toMatch(/save diagram/i));
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it('cannot be told to save twice', async () => {
+    deferSubmit();
+    await mountConfig();
+    await waitForPreview();
+
+    // Both clicks inside one act(), so the second lands before React has
+    // re-rendered the disabled attribute. That is the case the guard inside
+    // save() exists for — the attribute alone does not cover it.
+    await act(async () => {
+      fireEvent.click(saveButton());
+      fireEvent.click(saveButton());
+    });
+
+    await waitFor(() => expect(h.submitConfig).toHaveBeenCalledTimes(1));
+    expect(h.submitConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a failed save and gives the button back', async () => {
+    const held = deferSubmit();
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    await waitFor(() => expect(saveButton().disabled).toBe(true));
+    await held.fail('bridge exploded');
+
+    // Assertive, not polite: a save that silently did nothing is worth
+    // interrupting for.
+    await waitFor(() => {
+      const alert = document.querySelector('.diagnostic[role="alert"]');
+      expect(alert?.textContent).toMatch(/couldn't save/i);
+    });
+    expect(saveButton().disabled).toBe(false);
+    expect(saveButton().textContent).toMatch(/save diagram/i);
+  });
+});
+
+// --- The editor mount ---------------------------------------------------------
+describe('editor mount', () => {
+  it('announces the config fetch politely, with a delayed spinner', async () => {
+    h.getConfig.mockReturnValue(new Promise(() => {}));
+    await mountConfig();
+
+    const busy = document.querySelector('[role="status"]');
+    expect(busy).not.toBeNull();
+    expect(busy.textContent).toMatch(/loading editor/i);
+    expect(busy.querySelector('.spinner').getAttribute('aria-hidden')).toBe('true');
+    expect(busy.classList.contains('reveal')).toBe(true);
+  });
+});
+
+// --- The debounce was charging discrete clicks for a keystroke's problem ------
+// The preview effect is keyed [source, mermaidVersion, theme] and put every one
+// of them behind the same 300ms timer. But the timer exists to coalesce typing:
+// a template pick, a theme flip or a version change is a single final gesture
+// with no next keystroke coming, so the wait bought nothing and was most of the
+// latency. Measured in Chromium on a warm engine, a template switch spent
+// ~300ms waiting and ~95ms rendering.
+describe('preview: discrete actions skip the typing debounce', () => {
+  // One macrotask. A setTimeout(0) has fired by the time this resolves; a
+  // setTimeout(300) has not. That gap is the whole assertion below, and it
+  // needs no fake timers — which this suite deliberately does not use.
+  const oneTask = () =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+  /** The live CodeMirror instance, so a test can type the way a user does. */
+  const editorView = () => EditorView.findFromDOM(document.querySelector('.cm-editor'));
+
+  it('still debounces the first render, which nothing discrete asked for', async () => {
+    await mountConfig();
+
+    // The control for every test below: with no discrete trigger, the timer is
+    // the full debounce and one macrotask is nowhere near enough.
+    await oneTask();
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+
+    await waitForPreview();
+  });
+
+  it('renders a template pick on the next tick', async () => {
+    await mountConfig();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    const template = TEMPLATES[1];
+    await act(async () => {
+      fireEvent.change(selectByLabel('Start from'), { target: { value: template.id } });
+    });
+    await oneTask();
+
+    expect(h.renderDiagram).toHaveBeenCalledWith(
+      expect.objectContaining({ source: template.source }),
+    );
+  });
+
+  it('renders a theme change on the next tick', async () => {
+    await mountConfig();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    await act(async () => {
+      fireEvent.change(selectByLabel('Theme'), { target: { value: 'dark' } });
+    });
+    await oneTask();
+
+    expect(h.renderDiagram).toHaveBeenCalledWith(expect.objectContaining({ theme: 'dark' }));
+  });
+
+  it('renders a Mermaid version change on the next tick', async () => {
+    await mountConfig();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    await act(async () => {
+      fireEvent.change(selectByLabel('Mermaid'), { target: { value: '10' } });
+    });
+    await oneTask();
+
+    expect(h.renderDiagram).toHaveBeenCalledWith(expect.objectContaining({ versionPref: '10' }));
+  });
+
+  // Typing is the case the debounce is for, and the one that must not regress.
+  it('still debounces typing', async () => {
+    await mountConfig();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    const view = editorView();
+    await act(async () => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: '\n  B --> C' } });
+    });
+    await oneTask();
+
+    expect(h.renderDiagram).not.toHaveBeenCalled();
+    await waitFor(() => expect(h.renderDiagram).toHaveBeenCalled());
+  });
+
+  // The subtle way this breaks: consume the flag in the timer instead of at
+  // schedule time, or forget to clear it, and every later keystroke inherits
+  // the no-debounce path — turning the debounce off for the one input it exists
+  // to serve, on a machine slow enough that it matters.
+  it('does not leave the fast path armed for the next keystroke', async () => {
+    await mountConfig();
+    await waitForPreview();
+
+    await act(async () => {
+      fireEvent.change(selectByLabel('Start from'), { target: { value: TEMPLATES[1].id } });
+    });
+    await oneTask();
+    await waitForPreview();
+    h.renderDiagram.mockClear();
+
+    const view = editorView();
+    await act(async () => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: '\n  Z --> Y' } });
+    });
+    await oneTask();
+
+    expect(h.renderDiagram).not.toHaveBeenCalled();
   });
 });

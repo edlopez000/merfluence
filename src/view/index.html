@@ -369,6 +369,41 @@
         }
       }
 
+      /* ---------------------------------------------------------------- */
+      /* Delayed reveal for busy indicators                                */
+      /* Duplicated verbatim in src/config/index.html — the two shells      */
+      /* share no stylesheet (see the Stage block below). Keep them in step.*/
+      /* ---------------------------------------------------------------- */
+
+      /* A busy indicator mounts the moment work starts and unmounts when it
+         ends, so work that finishes inside the delay below never paints at
+         all. That is the whole anti-flash mechanism: no JS timer, no extra
+         state, no bundle cost. The fade matters as much as the delay — work
+         landing just past it would otherwise flash at full opacity for one
+         frame, where the ramp puts it in single-digit percent and it reads as
+         nothing.
+         150ms is calibrated for the whole-surface placeholders that use this
+         class bare (the editor mount, the reader's first load): they are the
+         only thing on screen, so the delay buys one un-flashed fast path and
+         anything longer is just a blank panel. Indicators that overlay content
+         which is still usable want a much longer delay and set their own — see
+         .preview-busy in src/config/index.html.
+         Deliberately NOT `opacity: 0` + `forwards`: the resting value is the
+         visible one and the delay is carried by a `backwards` fill, so
+         anything that stops the animation — a reduced-motion rule, a browser
+         that skips it — falls back to "appears immediately" rather than
+         "never appears". An indicator that can silently vanish for a subset of
+         users is worse than one that occasionally shows early. */
+      .reveal {
+        opacity: 1;
+        animation: mf-reveal 160ms ease-out 150ms backwards;
+      }
+      @keyframes mf-reveal {
+        from {
+          opacity: 0;
+        }
+      }
+
       /* Export is a button that opens a small menu of formats (PNG / SVG),
          replacing the two separate buttons. The menu is absolutely positioned so
          it drops below without changing the toolbar's height. */
@@ -451,6 +486,14 @@
         border: 1px dashed var(--ds-border, #dfe1e6);
         color: var(--ds-text-subtle, #44546f);
       }
+      /* The working variant: the spinner sits inline with the text rather than
+         above it, so the box keeps the single-line height the plain message
+         already had and nothing shifts when the diagram lands. */
+      .message.busy {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
       .message.error {
         border-left: 3px solid var(--ds-border-danger, #c9372c);
         border-radius: 0;
@@ -473,6 +516,14 @@
            actually carries the meaning, so nothing is lost by stopping it. */
         .spinner {
           animation: none;
+        }
+        /* Zeroing the duration, not `animation: none`. The delay and the
+           `backwards` fill are load-bearing — killing the animation outright
+           would drop the anti-flash delay here, and would hide the indicator
+           entirely under any future rule with a zero resting opacity. This
+           removes the fade and keeps the timing. */
+        .reveal {
+          animation-duration: 1ms;
         }
       }
     </style>
