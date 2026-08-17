@@ -360,8 +360,17 @@ function App() {
     if (state.status === 'ready') requestAnimationFrame(resize);
   }, [state.status, readySvg]);
 
+  // Waiting on getConfig(). The reveal delay earns its keep here: on a cache
+  // hit this state lasts exactly one tick — decide() paints the stored SVG in
+  // the same tick getConfig() resolves — so an undelayed spinner would flash
+  // on every fast path, which is most of them.
   if (state.status === 'loading') {
-    return <div className="message empty">Loading diagram…</div>;
+    return (
+      <div className="message empty busy reveal" role="status">
+        <span className="spinner" aria-hidden="true" />
+        Loading diagram…
+      </div>
+    );
   }
 
   if (state.status === 'empty') {
@@ -386,10 +395,18 @@ function App() {
   }
 
   // Cache miss waiting to scroll into view. This element is what the
-  // IntersectionObserver watches, so it must render before the diagram does.
+  // IntersectionObserver watches, so it must render before the diagram does —
+  // never wrap it or hide it with display:none, or the observer loses the box
+  // it measures and the diagram never renders at all.
+  //
+  // No spinner and no reveal delay here, unlike the loading state above.
+  // 'deferred' means not started, not working: a page with several
+  // below-the-fold macros would otherwise spin one animation per macro
+  // indefinitely. And with nothing else on screen for this macro, delaying the
+  // only text there is would just show an empty box for longer.
   if (state.status === 'deferred') {
     return (
-      <div ref={deferRef} className="message empty">
+      <div ref={deferRef} className="message empty" role="status">
         Loading diagram…
       </div>
     );

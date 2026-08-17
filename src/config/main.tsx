@@ -253,6 +253,15 @@ function Panel({ initial }: { initial: InitialConfig }) {
   const [height, setHeight] = useState(normalizeHeight(initial.height));
 
   const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
+  // Whether a newer render is in flight. Deliberately separate from
+  // PreviewState rather than a member of it: the union answers "what is
+  // painted?", this answers "is a newer answer coming?", and the whole point of
+  // the in-flight chip is that those differ — the previous SVG stays painted,
+  // and interactive, while the next one renders. Folding it into the union
+  // would mean a 'pending' member carrying a second copy of the SVG that
+  // `ready` already holds, plus a `status === 'ready' || status === 'pending'`
+  // widening at every site that reads the union.
+  const [pending, setPending] = useState(false);
   // The full input tuple the last ready preview rendered from, written in the
   // same tick as its setPreview. save() reuses the SVG when its own inputs
   // match, sparing one of the two save-time renders; keying on the whole tuple
@@ -268,8 +277,30 @@ function Panel({ initial }: { initial: InitialConfig }) {
   // Whether Tab has been pressed in the source editor yet, which is when the
   // "how to get out" hint stops being noise and starts being the answer.
   const [tabCaptured, setTabCaptured] = useState(false);
+  // Errors from an import (dropped file, pasted Live link) and from a failed
+  // save. One slot rather than two because they are mutually exclusive in
+  // practice and share the same diagnostic row under the panes.
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Whether a save is in flight: up to two renders plus the bridge submit,
+  // long enough that the button has to say so and stop taking clicks.
+  const [saving, setSaving] = useState(false);
+  // The same fact as `saving`, kept where the guard in save() can read it.
+  // State is not usable for that: two clicks landing in one React batch both
+  // run against the same render's closure, so both would see `saving === false`
+  // and both would submit. A ref is mutated synchronously, so the second click
+  // sees what the first one wrote. `saving` still exists because the ref is not
+  // reactive and the button has to re-render to show it.
+  const savingRef = useRef(false);
+  // Set by the discrete triggers — picking a template, changing a setting,
+  // dropping a file, pasting a Live link — to render on the next tick instead
+  // of waiting out the typing debounce. Those are single, final gestures: there
+  // is no next keystroke coming to coalesce with, so the debounce is pure dead
+  // time on exactly the interactions that should feel immediate. Measured on a
+  // warm engine, a template switch spends ~300ms waiting and ~95ms rendering,
+  // so this is most of the wait. A ref rather than state because it must not
+  // itself cause a render, and because the effect below consumes it.
+  const renderNow = useRef(false);
   const dark = useMemo(() => resolveTheme(theme) === 'dark', [theme]);
 
   // Which template the "Start from" picker shows. Derived from the source rather
@@ -307,6 +338,7 @@ function Panel({ initial }: { initial: InitialConfig }) {
       if ('error' in result) {
         setDropError(result.error);
       } else if (result.source.trim()) {
+        renderNow.current = true; // the drop already made the user wait on a read
         setSource(result.source);
       } else {
         setDropError('That file has no Mermaid content.');
@@ -329,6 +361,7 @@ function Panel({ initial }: { initial: InitialConfig }) {
     try {
       const decoded = await decodeLiveUrl(text);
       if (gen !== sourceGen.current) return; // superseded while decoding
+      renderNow.current = true; // the paste already made the user wait on a decode
       setSource(decoded);
     } catch (err) {
       if (gen !== sourceGen.current) return;
@@ -454,31 +487,59 @@ function Panel({ initial }: { initial: InitialConfig }) {
   useEffect(() => {
     setDropError(null); // any source/setting change supersedes a drop error
     let cancelled = false;
-    const timer = setTimeout(async () => {
-      if (!source.trim()) {
-        if (!cancelled) setPreview({ status: 'empty' });
-        return;
-      }
-      try {
-        const resolvedTheme = resolveTheme(theme);
-        const { svg } = await renderDiagram({
-          source,
-          versionPref: mermaidVersion,
-          theme: resolvedTheme,
-        });
-        if (!cancelled) {
-          previewRender.current = {
-            source,
-            mermaidVersion,
-            theme: resolvedTheme,
-            svg,
-          };
-          setPreview({ status: 'ready', svg });
+    // Read and clear at schedule time, not inside the timer: the flag describes
+    // the change that scheduled *this* run, and leaving it set would hand the
+    // no-debounce path to whatever typing happened next.
+    const immediate = renderNow.current;
+    renderNow.current = false;
+    const timer = setTimeout(
+      async () => {
+        if (!source.trim()) {
+          if (!cancelled) {
+            setPreview({ status: 'empty' });
+            setPending(false);
+          }
+          return;
         }
-      } catch (err) {
-        if (!cancelled) setPreview({ status: 'error', ...describeError(err) });
-      }
-    }, DEBOUNCE_MS);
+        // Marked pending here rather than at effect start, so the chip's reveal
+        // delay measures the render and not the debounce. Setting it on the
+        // keystroke would spend the delay waiting for DEBOUNCE_MS to elapse and
+        // blink the chip on every pause in typing — exactly the flicker the
+        // delay exists to prevent. Unguarded by `cancelled` because reaching
+        // here means the timer fired, so cleanup has not run. A superseded
+        // render leaves this true, which is correct: its replacement is already
+        // queued and owns clearing it.
+        setPending(true);
+        try {
+          const resolvedTheme = resolveTheme(theme);
+          const { svg } = await renderDiagram({
+            source,
+            versionPref: mermaidVersion,
+            theme: resolvedTheme,
+          });
+          if (!cancelled) {
+            previewRender.current = {
+              source,
+              mermaidVersion,
+              theme: resolvedTheme,
+              svg,
+            };
+            setPreview({ status: 'ready', svg });
+            setPending(false);
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setPreview({ status: 'error', ...describeError(err) });
+            setPending(false);
+          }
+        }
+        // Still a timer at zero rather than an inline call, so the cancellation
+        // contract above is unchanged: one clearTimeout, one `cancelled` flag,
+        // both paths identical. This schedules the work sooner; it does not
+        // restructure how the work is abandoned.
+      },
+      immediate ? 0 : DEBOUNCE_MS,
+    );
 
     return () => {
       cancelled = true;
@@ -491,7 +552,10 @@ function Panel({ initial }: { initial: InitialConfig }) {
 
   const insertTemplate = (id: string) => {
     const template = TEMPLATES.find((t) => t.id === id);
-    if (template) setSource(template.source);
+    if (template) {
+      renderNow.current = true; // a pick is final — nothing to coalesce with
+      setSource(template.source);
+    }
   };
 
   // On save, render the diagram to SVG for both light and dark and stash the
@@ -507,6 +571,13 @@ function Panel({ initial }: { initial: InitialConfig }) {
   // rendered one of the two variants from these exact inputs, so that leg is
   // reused instead of re-rendered.
   const save = async () => {
+    // The disabled attribute below is the visible half of this; this guard is
+    // what actually holds, because two clicks landing inside one React batch
+    // both run before the re-render that disables the button. Read through the
+    // ref, not the state — see its declaration for why the state cannot.
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     const previewSvgFor = (renderTheme: string) => {
       const prev = previewRender.current;
       return prev &&
@@ -543,7 +614,21 @@ function Panel({ initial }: { initial: InitialConfig }) {
     // rides alongside the cache fields without affecting them. Omit when unset
     // so a natural-size diagram doesn't carry a stale key.
     const sizing = height ? { height } : {};
-    await submitConfig({ source, mermaidVersion, theme, useMaxWidth, ...sizing, ...cacheFields });
+    try {
+      await submitConfig({ source, mermaidVersion, theme, useMaxWidth, ...sizing, ...cacheFields });
+    } catch {
+      // A failed submit is the one error here the user can act on — the render
+      // failures above are already absorbed into a source-only save. Reuse the
+      // panel's diagnostic slot: it is role="alert", which is assertive, and a
+      // save that silently did nothing is exactly what warrants interrupting.
+      setDropError("Couldn't save the diagram. Try again.");
+    } finally {
+      // On success the host is tearing this modal down, so this lands on a
+      // component about to unmount; on failure it is what gives the button
+      // back. React 19 does not warn about the former.
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const valid = preview.status === 'ready';
@@ -578,7 +663,13 @@ function Panel({ initial }: { initial: InitialConfig }) {
 
         <label>
           Theme
-          <select value={theme} onChange={(e) => setTheme(e.target.value)}>
+          <select
+            value={theme}
+            onChange={(e) => {
+              renderNow.current = true;
+              setTheme(e.target.value);
+            }}
+          >
             <option value="auto">Match Confluence</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
@@ -601,7 +692,13 @@ function Panel({ initial }: { initial: InitialConfig }) {
 
         <label>
           Mermaid
-          <select value={mermaidVersion} onChange={(e) => setMermaidVersion(e.target.value)}>
+          <select
+            value={mermaidVersion}
+            onChange={(e) => {
+              renderNow.current = true;
+              setMermaidVersion(e.target.value);
+            }}
+          >
             {VERSION_OPTIONS.map((v) => (
               <option key={v.value} value={v.value}>
                 {v.label}
@@ -656,7 +753,7 @@ function Panel({ initial }: { initial: InitialConfig }) {
 
         <div className="pane">
           <div className="pane-title">Preview</div>
-          <div className="preview">
+          <div className="preview" aria-busy={pending}>
             {/* The same Stage the reader view renders, so the preview is not a
                 lookalike of the published diagram but literally the same
                 component: pan, zoom, fit and maximize all work here, and the
@@ -678,6 +775,25 @@ function Panel({ initial }: { initial: InitialConfig }) {
             )}
             {preview.status === 'empty' && <span>Write some Mermaid to see it here.</span>}
             {preview.status === 'idle' && <span>Rendering…</span>}
+            {/* Overlays the diagram above rather than replacing it, so a
+                template switch or a keystroke never costs you the render you
+                are looking at — or the pan and zoom you set on it. Skipped
+                while 'idle', which is the first-ever render and already says
+                "Rendering…" in the middle of the empty pane; two indicators
+                for one wait is noise. Every other status is covered, including
+                'error', where the pane is otherwise blank.
+                role="status" is polite and atomic, matching the reader's
+                export chip. Deliberately not paired with an always-mounted
+                live region: this fires after every pause in typing, and an
+                announcement that landed reliably would read "Rendering…" over
+                the user's own typing. aria-busy on the pane is the signal that
+                carries here. */}
+            {pending && preview.status !== 'idle' && (
+              <div className="preview-busy reveal" role="status">
+                <span className="spinner" aria-hidden="true" />
+                Rendering…
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -702,8 +818,20 @@ function Panel({ initial }: { initial: InitialConfig }) {
         <button type="button" onClick={closeConfig}>
           Cancel
         </button>
-        <button type="button" className="primary" onClick={save} disabled={!valid}>
-          Save diagram
+        {/* No spinner inside this one: it sits on --ds-background-brand-bold
+            with inverse text, where .spinner's subtle border colours are all
+            but invisible. The label swap plus the existing disabled styling
+            already reads unambiguously. Not gated on `pending` — save() reads
+            live state and its reuse tuple keys on the whole input set, so
+            saving mid-debounce still writes the source you are looking at. */}
+        <button
+          type="button"
+          className="primary"
+          onClick={save}
+          disabled={!valid || saving}
+          aria-busy={saving}
+        >
+          {saving ? 'Saving…' : 'Save diagram'}
         </button>
       </div>
     </div>
@@ -732,7 +860,13 @@ function App() {
       .catch(() => setInitial({}));
   }, []);
 
-  if (!initial) return <div className="panel">Loading editor…</div>;
+  if (!initial)
+    return (
+      <div className="panel loading reveal" role="status">
+        <span className="spinner" aria-hidden="true" />
+        Loading editor…
+      </div>
+    );
   return <Panel initial={initial} />;
 }
 

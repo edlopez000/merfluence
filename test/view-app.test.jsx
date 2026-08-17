@@ -1261,3 +1261,61 @@ describe('stage: the reader never fits inline', () => {
     expect(zoomLabel()).toBe('200%');
   });
 });
+
+// --- Nothing on screen said the reader was working --------------------------
+// Both waits the reader can be in — the getConfig round trip, and a cache miss
+// waiting to scroll in — painted the same undifferentiated line of text, with
+// no role, so a screen reader was told nothing at all. They are not the same
+// wait: one lasts a tick on the fast path, the other covers an ~850KB module
+// fetch plus a render, and they get correspondingly different treatment.
+describe('loading indicators', () => {
+  const busy = () => root().querySelector('[role="status"]');
+
+  it('announces the initial load politely, with a spinner', async () => {
+    // A config fetch that never settles, so the loading state is observable.
+    h.getConfig.mockReturnValue(new Promise(() => {}));
+    await mountView();
+
+    expect(busy()).not.toBeNull();
+    expect(busy().textContent).toMatch(/loading diagram/i);
+    // Decorative: the text beside it is what carries the meaning, so the ring
+    // must not be announced as well.
+    expect(busy().querySelector('.spinner').getAttribute('aria-hidden')).toBe('true');
+    // The delayed-reveal class is what keeps this from flashing on a cache hit,
+    // where this state lasts a single tick.
+    expect(busy().classList.contains('reveal')).toBe(true);
+  });
+
+  it('keeps the deferred placeholder as the element the observer watches', async () => {
+    h.getConfig.mockResolvedValue({ source: 'flowchart TD\n A-->B', theme: 'light' });
+    h.renderDiagram.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+    });
+    await mountView();
+
+    // The regression this guards: adding the role must not wrap the ref'd
+    // element or move the ref. If the observer ends up watching anything other
+    // than the node on screen, a cache miss never renders at all.
+    expect(busy()).not.toBeNull();
+    expect(ioInstances[0].elements[0]).toBe(busy());
+    // No spinner here on purpose — 'deferred' means not started, and a page of
+    // below-the-fold macros would otherwise spin one animation each, forever.
+    expect(busy().querySelector('.spinner')).toBeNull();
+    expect(busy().classList.contains('reveal')).toBe(false);
+  });
+
+  it('drops the indicator once the diagram paints', async () => {
+    h.getConfig.mockResolvedValue({ source: 'flowchart TD\n A-->B', theme: 'light' });
+    h.renderDiagram.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+    });
+    await mountView();
+
+    await act(async () => {
+      ioInstances[0].intersect();
+    });
+
+    await waitFor(() => expect(root().querySelector('svg')).not.toBeNull());
+    expect(busy()).toBeNull();
+  });
+});
