@@ -58,7 +58,7 @@
     "@commitlint/config-conventional": "^21.2.0",
     "@cyclonedx/cyclonedx-npm": "^6.0.0",
     "@eslint/js": "^9.39.5",
-    "@forge/cli": "13.2.0",
+    "@forge/cli": "13.3.0",
     "@size-limit/file": "^13.0.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.0",
