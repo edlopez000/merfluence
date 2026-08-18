@@ -289,7 +289,14 @@
       .root:has(.stage:focus-visible) .toolbar,
       /* A failure message lives in the toolbar; hiding the toolbar the moment the
          pointer leaves would take the message with it. */
-      .toolbar:has(.status) {
+      .toolbar:has(.status),
+      /* Same reasoning for an open export menu, which also holds document height
+         open below the macro when the iframe is too short for it (see
+         menu-placement.js) — space reserved for a popup the pointer had just
+         faded out would be space held for nothing. :focus-within usually covers
+         this, since clicking the trigger focuses it, but not once focus has
+         moved on. */
+      .toolbar:has(.export-menu) {
         opacity: 1;
       }
 
@@ -406,7 +413,14 @@
 
       /* Export is a button that opens a small menu of formats (PNG / SVG),
          replacing the two separate buttons. The menu is absolutely positioned so
-         it drops below without changing the toolbar's height. */
+         it drops below without changing the toolbar's height.
+
+         `top` here is the resting placement, used until the menu has been
+         measured; when the macro's iframe is too short to paint a menu hanging
+         below the toolbar, main.tsx overrides it with an inline offset that
+         slides the menu back inside (see src/lib/menu-placement.ts). Which is
+         why nothing here may set `bottom` — an inline `top` cannot win against a
+         rule that pins the other edge. */
       .export {
         position: relative;
         display: flex;
