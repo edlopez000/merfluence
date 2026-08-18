@@ -425,6 +425,22 @@
         border: 1px solid var(--ds-border, #dfe1e6);
         box-shadow: var(--ds-shadow-overlay, 0 4px 8px rgba(9, 30, 66, 0.25));
       }
+      /* The transparency toggle is a modifier, not an action, so a rule sets it
+         apart from the three things above it that actually do something. */
+      .export-menu .option {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 2px;
+        padding-top: 8px;
+        border-top: 1px solid var(--ds-border, #dfe1e6);
+      }
+      /* Reserve the tick's width in both states, so checking the box does not
+         shift its label sideways. */
+      .export-menu .check {
+        display: inline-block;
+        width: 1em;
+      }
       .export-menu button {
         justify-content: flex-start;
         text-align: left;

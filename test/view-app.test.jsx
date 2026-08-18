@@ -54,12 +54,17 @@ vi.mock('../src/lib/mermaid-registry.js', async (importActual) => {
 
 // The Toolbar's export buttons call into png-export, which draws to a canvas —
 // covered directly by test/browser. Here we only need to prove the toolbar wires
-// the click to it with the stage's <svg>, so spy the two functions.
+// the click to it with the stage's <svg>, so spy the three functions.
 const p = vi.hoisted(() => ({
   exportSvg: vi.fn(),
   exportPng: vi.fn(() => Promise.resolve()),
+  copyPngToClipboard: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../src/lib/png-export.js', () => ({ exportSvg: p.exportSvg, exportPng: p.exportPng }));
+vi.mock('../src/lib/png-export.js', () => ({
+  exportSvg: p.exportSvg,
+  exportPng: p.exportPng,
+  copyPngToClipboard: p.copyPngToClipboard,
+}));
 
 // jsdom implements neither observer the view relies on. Both stubs record and
 // are driven by hand: the IntersectionObserver to run the deferral, the
@@ -97,6 +102,7 @@ beforeEach(() => {
   h.surfaceColor.mockImplementation((theme) => `surface-${theme}`);
   p.exportSvg.mockReset();
   p.exportPng.mockReset().mockImplementation(() => Promise.resolve());
+  p.copyPngToClipboard.mockReset().mockImplementation(() => Promise.resolve());
   r.loadMermaid.mockReset().mockResolvedValue({});
   ioInstances = [];
   roInstances = [];
@@ -427,6 +433,9 @@ const btnByText = (re) =>
 const btnByLabel = (re) =>
   [...root().querySelectorAll('button')].find((b) => re.test(b.getAttribute('aria-label') || ''));
 const stageEl = () => root().querySelector('.stage');
+// The export menu's transparency option. Matched by role rather than text: it is
+// a menuitemcheckbox, which is exactly what keeps it out of menuItems() below.
+const toggle = () => root().querySelector('.export-menu [role="menuitemcheckbox"]');
 // A PNG export starts one animation frame after the click — the frame that lets
 // the "Exporting…" chip paint before the rasterize begins — so it is never
 // observable in the click's own tick.
@@ -510,7 +519,7 @@ describe('toolbar: export menu', () => {
     expect(root().querySelector('.export-menu')).toBeNull();
 
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png \(transparent\)$/i));
+    fireEvent.click(btnByText(/^png$/i));
     // Not called in the same tick, deliberately: savePng waits a frame first so
     // the "Exporting…" chip paints before the rasterize starts (see MIN_BUSY_MS
     // in src/view/main.tsx). Every PNG assertion below has to wait for it.
@@ -533,7 +542,7 @@ describe('toolbar: export menu', () => {
     expect(svgName).toMatch(/^deploy-pipeline-\d{8}-\d{6}\.svg$/);
 
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png \(with background\)$/i));
+    fireEvent.click(btnByText(/^png$/i));
     await waitForPng();
     const pngName = p.exportPng.mock.calls[0][1].filename;
     expect(pngName).toMatch(/^deploy-pipeline-\d{8}-\d{6}\.png$/);
@@ -544,7 +553,7 @@ describe('toolbar: export menu', () => {
     await mountReady();
 
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png \(with background\)$/i));
+    fireEvent.click(btnByText(/^png$/i));
     await waitForPng();
 
     await waitFor(() => expect(root().textContent).toMatch(/canvas tainted/i));
@@ -555,26 +564,34 @@ describe('toolbar: export menu', () => {
 // Mermaid paints no backdrop, so the PNG was transparent and nothing said so.
 // That composites beautifully onto a coloured slide and disappears when pasted
 // into dark-mode Slack, where a dark-themed diagram is light text on nothing.
-// Both are now offered explicitly; which pixels each produces is asserted in
-// test/browser/export.e2e.test.js, where there is a real canvas to read back.
-describe('toolbar: PNG background choice', () => {
+// The choice is now a toggle rather than a variant per item: spelling the
+// backdrop out on each label made a five-item cross-product of two axes. Which
+// pixels each setting produces is asserted in test/browser/export.e2e.test.js,
+// where there is a real canvas to read back.
+describe('toolbar: image background toggle', () => {
   const menuItems = () =>
     [...root().querySelectorAll('.export-menu [role="menuitem"]')].map((b) => b.textContent.trim());
 
-  it('offers both variants, with the safer paste first', async () => {
+  it('offers three actions and one checkable option, not a variant per item', async () => {
     await mountReady();
     fireEvent.click(btnByText(/^export/i));
 
-    // Order is the feature: the top item is the one that survives being pasted
-    // onto an unknown backdrop, and it is where the old plain "PNG" item sat.
-    expect(menuItems()).toEqual(['PNG (with background)', 'PNG (transparent)', 'SVG']);
+    // The three things you can do. Copy sits above download because pasting is
+    // the shorter route to everywhere these images go.
+    expect(menuItems()).toEqual(['Copy image', 'PNG', 'SVG']);
+
+    // ...and the modifier, which is a checkbox rather than a fourth action, so
+    // a screen reader announces its state instead of reading it as a verb.
+    const option = toggle();
+    expect(option.textContent.trim()).toMatch(/^transparent background$/i);
+    expect(option.getAttribute('aria-checked')).toBe('false');
   });
 
-  it('paints the stage surface colour for the resolved theme', async () => {
+  it('paints the stage surface colour for the resolved theme by default', async () => {
     await mountReady('flowchart TD\n A-->B', 'dark');
 
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png \(with background\)$/i));
+    fireEvent.click(btnByText(/^png$/i));
     await waitForPng();
 
     // The diagram rendered dark, so the backdrop is resolved for dark too —
@@ -583,16 +600,61 @@ describe('toolbar: PNG background choice', () => {
     expect(p.exportPng.mock.calls[0][1]).toMatchObject({ background: 'surface-dark' });
   });
 
-  it('asks for no background at all on the transparent variant', async () => {
+  it('stays open when the toggle is clicked, so the action is still reachable', async () => {
     await mountReady();
 
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png \(transparent\)$/i));
+    fireEvent.click(toggle());
+
+    // The whole two-click flow depends on this: a menu that closed on the
+    // modifier would make choosing transparent impossible without reopening.
+    expect(root().querySelector('.export-menu')).not.toBeNull();
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('asks for no background at all once transparent is checked', async () => {
+    await mountReady();
+
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(toggle());
+    fireEvent.click(btnByText(/^png$/i));
     await waitForPng();
 
     // null, not a colour: this is the export that has to stay alpha-zero. An
     // absent key would default to null too, so assert the key is really there.
     expect(p.exportPng.mock.calls[0][1]).toHaveProperty('background', null);
+    // And the surface token is not even consulted — there is nothing to paint.
+    expect(h.surfaceColor).not.toHaveBeenCalled();
+  });
+
+  // The reason the toggle is component state and not a per-click argument: one
+  // control governs both raster outputs, and it survives the menu closing.
+  it('governs the copy and the download alike, and is still set on reopen', async () => {
+    await mountReady();
+    // The Export trigger is disabled while an action is in flight, so each step
+    // waits for the previous one to clear before reopening the menu.
+    const idle = () => waitFor(() => expect(btnByText(/^export/i).disabled).toBe(false));
+
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(toggle());
+    fireEvent.click(btnByText(/^copy image$/i));
+    expect(p.copyPngToClipboard.mock.calls[0][1]).toHaveProperty('background', null);
+    await idle();
+
+    // Menu closed on that click; reopening must not reset the choice.
+    fireEvent.click(btnByText(/^export/i));
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(btnByText(/^png$/i));
+    await waitForPng();
+    expect(p.exportPng.mock.calls[0][1]).toHaveProperty('background', null);
+    await idle();
+
+    // Unchecking puts the backdrop back, proving it is a toggle and not a latch.
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(toggle());
+    fireEvent.click(btnByText(/^copy image$/i));
+    expect(p.copyPngToClipboard.mock.calls[1][1]).toMatchObject({ background: 'surface-light' });
+    await idle();
   });
 });
 
@@ -626,7 +688,7 @@ describe('toolbar: PNG export progress', () => {
 
   async function startExport() {
     fireEvent.click(btnByText(/^export/i));
-    fireEvent.click(btnByText(/^png \(with background\)$/i));
+    fireEvent.click(btnByText(/^png$/i));
     await waitForPng();
   }
 
@@ -678,6 +740,111 @@ describe('toolbar: PNG export progress', () => {
     await waitFor(() => expect(busy()).toBeNull());
     expect(root().textContent).toMatch(/canvas tainted/i);
     expect(btnByText(/^export/i).disabled).toBe(false);
+  });
+});
+
+// --- Copy image ---------------------------------------------------------------
+// Every export was a download, so getting a diagram into a Slack message meant a
+// round trip through the Downloads folder and back up again. This item is the
+// same rasterize, handed to the clipboard instead. What lands in the clipboard is
+// asserted in test/browser/export.e2e.test.js, where there is a real canvas; the
+// backdrop it carries belongs to the toggle describe above; what this pins is the
+// wiring, the acknowledgement and the blocked path.
+describe('toolbar: copy image', () => {
+  const busy = () => root().querySelector('.status.busy');
+
+  const copyItem = () => {
+    fireEvent.click(btnByText(/^export/i));
+    fireEvent.click(btnByText(/^copy image$/i));
+  };
+
+  it('copies with the stage svg and the surface colour for the resolved theme', async () => {
+    await mountReady('flowchart TD\n A-->B', 'dark');
+
+    copyItem();
+
+    expect(p.copyPngToClipboard).toHaveBeenCalledTimes(1);
+    const [svg, options] = p.copyPngToClipboard.mock.calls[0];
+    expect(svg.tagName.toLowerCase()).toBe('svg');
+    // Same reasoning as the download: a dark diagram pasted onto white is the
+    // unreadable case, so the backdrop follows the theme the diagram rendered in.
+    expect(h.surfaceColor).toHaveBeenCalledWith('dark');
+    expect(options).toMatchObject({ background: 'surface-dark' });
+    expect(root().querySelector('.export-menu')).toBeNull();
+    // Let the copy settle before the test ends, so the acknowledgement below
+    // does not land on a torn-down tree.
+    await waitFor(() => expect(busy()?.textContent).toMatch(/copied image/i));
+  });
+
+  /**
+   * The regression that would otherwise only show up on real Safari.
+   *
+   * A clipboard write has to happen inside the click's transient user
+   * activation, and an `await` before it spends that window. savePng waits a
+   * frame on purpose (so its chip paints first) and copying must not copy that:
+   * png-export hands ClipboardItem the *unresolved* raster promise instead. Here
+   * that means the call is observable in the click's own tick, with nothing
+   * awaited — which is why this assertion has no `await` in front of it, unlike
+   * every PNG assertion in this file.
+   */
+  it('reaches the clipboard in the click that asked for it, awaiting nothing first', async () => {
+    await mountReady();
+
+    copyItem();
+
+    expect(p.copyPngToClipboard).toHaveBeenCalledTimes(1);
+  });
+
+  it('acknowledges the copy in the toolbar chip', async () => {
+    await mountReady();
+
+    copyItem();
+
+    // The menu closed on click, so the "Copied" label flip that Copy source uses
+    // has nowhere to land — the chip is the only surface a menu action has. It
+    // trails the busy chip by the MIN_BUSY_MS floor.
+    await waitFor(() => expect(busy()?.textContent).toMatch(/copied image/i));
+    expect(busy().getAttribute('role')).toBe('status');
+    // No spinner once the work is done: a chip saying "Copied image" beside a
+    // spinner would be saying two things.
+    expect(busy().querySelector('.spinner')).toBeNull();
+  });
+
+  it('says so visibly when the clipboard is blocked, and points somewhere else', async () => {
+    // What a host without the clipboard-write permissions policy actually
+    // throws; the reader is told what to do instead rather than shown the
+    // engine's wording.
+    p.copyPngToClipboard.mockImplementation(() =>
+      Promise.reject(new DOMException('Write permission denied.', 'NotAllowedError')),
+    );
+    await mountReady();
+
+    copyItem();
+
+    await waitFor(() => expect(root().textContent).toMatch(/clipboard is blocked/i));
+    expect(root().textContent).toMatch(/use png export instead/i);
+    // Not stranded: the finally path clears the chip and re-enables the trigger.
+    await waitFor(() => expect(btnByText(/^export/i).disabled).toBe(false));
+  });
+
+  it('cannot be told to copy twice while one copy is running', async () => {
+    let settle;
+    p.copyPngToClipboard.mockImplementation(() => new Promise((resolve) => (settle = resolve)));
+    await mountReady();
+
+    copyItem();
+
+    await waitFor(() => expect(busy()).not.toBeNull());
+    expect(busy().textContent).toMatch(/copying/i);
+    // The same gate the export has: a second rasterize on top of the first is
+    // exactly what someone does when the first click appeared to do nothing.
+    expect(btnByText(/^export/i).disabled).toBe(true);
+    fireEvent.click(btnByText(/^export/i));
+    expect(root().querySelector('.export-menu')).toBeNull();
+
+    await act(async () => settle());
+    await waitFor(() => expect(btnByText(/^export/i).disabled).toBe(false));
+    expect(p.copyPngToClipboard).toHaveBeenCalledTimes(1);
   });
 });
 

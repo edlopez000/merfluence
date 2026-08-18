@@ -1,8 +1,9 @@
 /**
- * In-browser diagram download helpers, extracted from the reader view so they
- * can be exercised directly by the Chromium test suite. Nothing here uploads or
- * touches the network — a Blob becomes an object URL and an anchor click, which
- * is the whole export story (see the zero-egress invariant in CLAUDE.md).
+ * In-browser diagram export helpers, extracted from the reader view so they can
+ * be exercised directly by the Chromium test suite. Nothing here uploads or
+ * touches the network — a Blob becomes either an object URL and an anchor click
+ * or a clipboard item, and that is the whole export story (see the zero-egress
+ * invariant in CLAUDE.md).
  */
 
 export function download(blob: Blob, filename: string) {
@@ -139,17 +140,14 @@ export function exportScaleFor(
  * colour itself is resolved by the caller (see surfaceColor in host.ts) so this
  * module stays out of the theming business.
  *
- * `filename` is likewise the caller's call — deriving it needs the diagram
- * source, which this module has no business knowing about (see export-name.ts).
- * The default is what every export was called before there was a choice.
+ * The blob is returned rather than consumed so both destinations can share this
+ * one rasterizer: exportPng hands it to download(), copyPngToClipboard hands it
+ * to the clipboard. Splitting it out is also what lets the clipboard path pass
+ * the *unresolved* promise on — see the comment there.
  */
-export async function exportPng(
+export async function renderPngBlob(
   svgEl: SVGElement,
-  {
-    scale = 2,
-    background = null,
-    filename = 'diagram.png',
-  }: { scale?: number; background?: string | null; filename?: string } = {},
+  { scale = 2, background = null }: { scale?: number; background?: string | null } = {},
 ) {
   const { clone, width, height } = sizedClone(svgEl);
   scale = exportScaleFor({ width, height }, scale);
@@ -183,5 +181,55 @@ export async function exportPng(
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('Could not rasterize the diagram');
-  download(blob, filename);
+  return blob;
+}
+
+/**
+ * The rendered diagram as a PNG in the reader's Downloads folder.
+ *
+ * `filename` is the caller's call — deriving it needs the diagram source, which
+ * this module has no business knowing about (see export-name.ts). The default
+ * is what every export was called before there was a choice.
+ */
+export async function exportPng(
+  svgEl: SVGElement,
+  {
+    scale = 2,
+    background = null,
+    filename = 'diagram.png',
+  }: { scale?: number; background?: string | null; filename?: string } = {},
+) {
+  download(await renderPngBlob(svgEl, { scale, background }), filename);
+}
+
+/**
+ * The rendered diagram as a PNG on the system clipboard — the same raster as
+ * exportPng, minus the round trip through Downloads and back into whatever the
+ * reader is pasting into.
+ *
+ * Deliberately **not** `async`, and the raster promise is handed over
+ * unresolved. `clipboard.write()` has to run inside the click's transient user
+ * activation, and any `await` before it spends that window: Safari rejects such
+ * a write outright. `ClipboardItem` accepting a `Promise<Blob>` is the sanctioned
+ * way to do slow work behind a clipboard write — the item is constructed
+ * synchronously in the handler, and the rasterize resolves into it afterwards.
+ * So this function must stay synchronous up to the write; if it ever grows an
+ * `await` above that line, the feature breaks only on real Safari, which no test
+ * here runs. (test/browser/export.e2e.test.js asserts the write is already
+ * issued before the caller awaits anything, which is that guarantee.)
+ *
+ * No filename: a clipboard image has no name.
+ *
+ * A host that blocks the clipboard — a missing permissions policy on the iframe,
+ * an engine without ClipboardItem — throws or rejects here, and the caller turns
+ * that into the visible "clipboard is blocked" message. There is no silent
+ * fallback to a download: a click that quietly does a different thing than the
+ * one it is labelled with is worse than one that says it could not.
+ */
+export function copyPngToClipboard(
+  svgEl: SVGElement,
+  { scale = 2, background = null }: { scale?: number; background?: string | null } = {},
+) {
+  const item = new ClipboardItem({ 'image/png': renderPngBlob(svgEl, { scale, background }) });
+  return navigator.clipboard.write([item]);
 }
