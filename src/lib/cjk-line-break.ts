@@ -53,20 +53,39 @@ export function hasEastAsian(text: string): boolean {
   return false;
 }
 
-/** Width of one unbreakable unit, in em. */
-function unitWidthEm(unit: string): number {
+/**
+ * A unit that is never broken apart: one grapheme cluster, or a run of them that
+ * belongs together (a Latin/number token, a katakana loanword).
+ */
+type Unit = string[];
+
+const unitText = (unit: Unit) => unit.join('');
+
+/** Width of one grapheme cluster, in em. */
+function clusterWidthEm(cluster: string): number {
   // Pictographic first: a few of them (〰 U+3030, 〽 U+303D) also fall inside
   // the WIDE ranges, and the emoji width is the one that matters.
-  if (PICTOGRAPHIC.test(unit)) return 1.2;
-  if (WIDE.test(unit)) return 1;
-  // A Latin/number run is many characters in one unit; everything else here is
-  // a single narrow grapheme.
-  return 0.5 * [...unit].length;
+  if (PICTOGRAPHIC.test(cluster)) return 1.2;
+  if (WIDE.test(cluster)) return 1;
+  return 0.5;
 }
 
-/** The width of a whole string in em, under the same model. Used by the callers' fit check. */
+/** Width of a whole unit — clusters are summed, so a run costs what it draws. */
+function unitWidthEm(unit: Unit): number {
+  let total = 0;
+  for (const cluster of unit) total += clusterWidthEm(cluster);
+  return total;
+}
+
+/**
+ * The width of a whole string in em, under the same model. Used by the callers'
+ * fit check. Grouping is irrelevant here — it changes where the breaks go, not
+ * how wide the text is — so this sums clusters directly.
+ */
 export function textWidthEm(text: string): number {
-  return groupUnits(segmentGraphemes(text)).reduce((sum, u) => sum + unitWidthEm(u), 0);
+  const clusters = segmentGraphemes(text);
+  if (!clusters) return 0;
+  return unitWidthEm(clusters);
 }
 
 /**
@@ -120,20 +139,59 @@ const ALNUM = /^[A-Za-z0-9]$/;
 const RUN_INNER = /^[.,\-_/:+]$/;
 
 /**
+ * Katakana, full-width and half-width, as two separate runs.
+ *
+ * `ー` (U+30FC) and the iteration marks are inside a loanword, so they join the
+ * run. `・` (U+30FB) is deliberately absent: it *separates* two loanwords, so it
+ * is a legitimate place to break — and it is already in NO_START, so it can
+ * never open a line.
+ */
+const KATAKANA = /^[\u30A1-\u30FA\u30FC-\u30FE]$/;
+const KATAKANA_HALF = /^[\uFF66-\uFF9F]$/;
+
+/** True for a run this module keeps whole only when it fits (see breakCjkText). */
+function isSoftRun(unit: Unit): boolean {
+  return (
+    unit.length > 1 &&
+    (unit.every((c) => KATAKANA.test(c)) || unit.every((c) => KATAKANA_HALF.test(c)))
+  );
+}
+
+/**
  * Merge grapheme clusters into unbreakable units.
  *
- * A cluster is already unbreakable. On top of that, a Latin/number run is one
- * unit, so identifiers and figures survive intact: breaking `SonarQube` or
- * `85.5%` across two lines of a note would be a worse defect than the overflow
- * this module exists to fix.
+ * A cluster is already unbreakable. On top of that:
+ *
+ * - a **Latin/number run** is one unit, so identifiers and figures survive
+ *   intact — breaking `SonarQube` or `85.5%` across two lines of a note would be
+ *   a worse defect than the overflow this module exists to fix. This one is
+ *   hard: it is never broken, whatever it costs in line width.
+ * - a **katakana run** is one unit, because Japanese typesetting keeps a
+ *   loanword whole. `ブロック` split as `ブロッ` / `ク` is legal under JIS X 4051
+ *   but reads badly, and it is what this module produced before. This one is
+ *   *soft*: `breakCjkText` puts it back into clusters when the word alone is
+ *   wider than the line, since a loanword longer than the whole budget has to
+ *   break somewhere.
  */
-function groupUnits(clusters: string[] | null): string[] {
+function groupUnits(clusters: string[] | null): Unit[] {
   if (!clusters) return [];
-  const units: string[] = [];
+  const units: Unit[] = [];
   let i = 0;
   while (i < clusters.length) {
+    const runOf = KATAKANA.test(clusters[i])
+      ? KATAKANA
+      : KATAKANA_HALF.test(clusters[i])
+        ? KATAKANA_HALF
+        : null;
+    if (runOf) {
+      let end = i + 1;
+      while (end < clusters.length && runOf.test(clusters[end])) end += 1;
+      units.push(clusters.slice(i, end));
+      i = end;
+      continue;
+    }
     if (!ALNUM.test(clusters[i])) {
-      units.push(clusters[i]);
+      units.push([clusters[i]]);
       i += 1;
       continue;
     }
@@ -156,7 +214,7 @@ function groupUnits(clusters: string[] | null): string[] {
         break;
       }
     }
-    units.push(clusters.slice(i, end).join(''));
+    units.push(clusters.slice(i, end));
     i = end;
   }
   return units;
@@ -167,12 +225,21 @@ const WHITESPACE = /^\s+$/;
 /**
  * Break `text` into lines no wider than `budgetEm`, in em under the model above.
  *
- * Greedy fill with the kinsoku correction applied *at* the break, in the
- * push-down direction: when the unit that would start the next line may not
- * begin one, the last unit of the current line goes down with it, rather than
- * squeezing the offender back onto a line that is already full. Pulling back
- * would be the other legal JIS X 4051 strategy, but it overruns the budget by a
- * whole character, and these budgets are what stops the text leaving the box.
+ * Greedy fill with the kinsoku correction applied *at* the break, preferring the
+ * push-down direction: when the unit that would start the next line may not begin
+ * one, the last unit of the current line goes down with it, rather than squeezing
+ * the offender back onto a line that is already full. Pulling back would be the
+ * other legal JIS X 4051 strategy, but it overruns the budget by a whole
+ * character, and these budgets are what stops the text leaving the box.
+ *
+ * `ceilingEm` is the width past which the text really would leave its box, as
+ * opposed to `budgetEm`, which is the conservative target. It buys back the one
+ * case push-down cannot serve: a line holding a *single* unbreakable unit (a
+ * timestamp, an identifier) followed by a character that may not open a line.
+ * Emptying that line is not an option, so without a ceiling the only choice was
+ * to accept `）` at the start of the next row. Given the real limit, the closing
+ * bracket can simply be pulled back. Callers that cannot derive a trustworthy
+ * ceiling omit it and keep the accept-as-is behaviour.
  *
  * At most one adjustment per boundary, and never one that would empty a line.
  * A run of forbidden characters (`。。。`) would otherwise bounce a unit between
@@ -188,37 +255,50 @@ const WHITESPACE = /^\s+$/;
  */
 export function breakCjkText(
   text: string,
-  { budgetEm, maxLines }: { budgetEm: number; maxLines?: number },
+  { budgetEm, ceilingEm, maxLines }: { budgetEm: number; ceilingEm?: number; maxLines?: number },
 ): string[] {
   const clusters = segmentGraphemes(text);
   if (!clusters) return [text];
 
-  const units = groupUnits(clusters);
+  // A katakana loanword wider than the whole line has to break somewhere, so it
+  // goes back to being individual clusters. A Latin run never does.
+  const units = groupUnits(clusters).flatMap((unit) =>
+    isSoftRun(unit) && unitWidthEm(unit) > budgetEm ? unit.map((cluster) => [cluster]) : [unit],
+  );
   if (units.length === 0) return [text];
 
-  const lines: string[][] = [];
-  let line: string[] = [];
+  const lines: Unit[][] = [];
+  let line: Unit[] = [];
   let width = 0;
 
   for (const unit of units) {
     const w = unitWidthEm(unit);
     if (line.length > 0 && width + w > budgetEm) {
-      const carry: string[] = [];
-      if (line.length >= 2 && (NO_START.has(unit) || NO_END.has(line[line.length - 1]))) {
-        carry.push(line.pop() as string);
+      const opensBadly = NO_START.has(unit[0]);
+      const closesBadly = NO_END.has(line[line.length - 1].at(-1) as string);
+      if (line.length === 1 && opensBadly && ceilingEm !== undefined && width + w <= ceilingEm) {
+        // Pull back rather than open a line with it — the line is one
+        // unbreakable unit, so there is nothing to push down instead.
+        line.push(unit);
+        width += w;
+        continue;
+      }
+      const carry: Unit[] = [];
+      if (line.length >= 2 && (opensBadly || closesBadly)) {
+        carry.push(line.pop() as Unit);
       }
       lines.push(line);
       line = carry;
       width = carry.reduce((sum, u) => sum + unitWidthEm(u), 0);
     }
     // A line never opens with a space: the break already separated the words.
-    if (line.length === 0 && WHITESPACE.test(unit)) continue;
+    if (line.length === 0 && WHITESPACE.test(unitText(unit))) continue;
     line.push(unit);
     width += w;
   }
   if (line.length > 0) lines.push(line);
 
-  const rows = lines.map((l) => l.join('').replace(/\s+$/, ''));
+  const rows = lines.map((l) => l.map(unitText).join('').replace(/\s+$/, ''));
   if (maxLines && rows.length > maxLines) {
     return [...rows.slice(0, maxLines - 1), rows.slice(maxLines - 1).join('')];
   }

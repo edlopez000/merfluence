@@ -89,6 +89,82 @@ describe('breakCjkText', () => {
     expect(lines.join('')).toBe('一二三（四五六）');
   });
 
+  describe('a one-unit line, where push-down has nothing to move', () => {
+    // The case from sequence-20260817-233841.svg: a line holding a single
+    // unbreakable token, followed by a character that may not open a line.
+    const stamp = '2026-08-09T23:41:32+09:00';
+    const label = `発生時刻：${stamp}）ﾃｽﾄ環境`;
+
+    it('pulls the offender back when the ceiling allows it', () => {
+      const lines = breakCjkText(label, { budgetEm: 160 / 14, ceilingEm: 230 / 14 });
+      expect(lines.some((l) => l.startsWith('）'))).toBe(false);
+      expect(lines.some((l) => l.endsWith('）'))).toBe(true);
+      expect(lines.join('')).toBe(label);
+    });
+
+    it('refuses the pull-back when it would breach the ceiling', () => {
+      // Ceiling barely above the budget: the timestamp line is already past it.
+      const lines = breakCjkText(label, { budgetEm: 160 / 14, ceilingEm: 165 / 14 });
+      expect(lines.some((l) => l.startsWith('）'))).toBe(true);
+      expect(lines.join('')).toBe(label);
+    });
+
+    it('keeps the accept-as-is behaviour when no ceiling is given', () => {
+      const lines = breakCjkText(label, { budgetEm: 160 / 14 });
+      expect(lines.some((l) => l.startsWith('）'))).toBe(true);
+      expect(lines.join('')).toBe(label);
+    });
+
+    it('does not let the ceiling reopen the bounce hazard', () => {
+      const lines = breakCjkText('。'.repeat(40), { budgetEm: 2, ceilingEm: 20 });
+      expect(lines.join('')).toBe('。'.repeat(40));
+      for (const line of lines) expect(line.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('katakana loanwords', () => {
+    it('keeps a loanword whole rather than breaking after its small kana', () => {
+      // Was 場合は、マージをブロッ / クしたうえで… before this rule.
+      const label = '品質ゲートを通過しない場合は、マージをブロックしたうえで担当者へ通知する';
+      const lines = breakCjkText(label, { budgetEm: 160 / 14 });
+      expect(lines.join('')).toBe(label);
+      for (const word of ['ゲート', 'マージ', 'ブロック']) {
+        expect(
+          lines.some((l) => l.includes(word)),
+          `${word} survives on one line`,
+        ).toBe(true);
+      }
+    });
+
+    it('breaks a loanword that is wider than the whole line', () => {
+      const label = 'これはエンタープライズアーキテクチャの刷新である。';
+      const lines = breakCjkText(label, { budgetEm: 160 / 14 });
+      expect(lines.join('')).toBe(label);
+      expect(lines.length).toBeGreaterThan(1);
+    });
+
+    it('treats ・ as a break opportunity between two loanwords', () => {
+      const label = 'サーバー・クライアント・アーキテクチャの構成';
+      const lines = breakCjkText(label, { budgetEm: 8 });
+      expect(lines.join('')).toBe(label);
+      for (const word of ['サーバー', 'クライアント', 'アーキテクチャ']) {
+        expect(
+          lines.some((l) => l.includes(word)),
+          `${word} survives on one line`,
+        ).toBe(true);
+      }
+      // ・ is 行頭禁則, so it can never be the thing that opens a row.
+      for (const line of lines) expect(line.startsWith('・')).toBe(false);
+    });
+
+    it('groups half-width katakana too', () => {
+      const label = '収集したﾒﾄﾘｸｽを環境ごとに集計する';
+      const lines = breakCjkText(label, { budgetEm: 6 });
+      expect(lines.join('')).toBe(label);
+      expect(lines.some((l) => l.includes('ﾒﾄﾘｸｽ'))).toBe(true);
+    });
+  });
+
   it('accepts an unfixable boundary rather than emptying a line or bouncing', () => {
     // A run of forbidden characters has no legal break; the guard has to give up
     // and take the greedy boundary, not loop.

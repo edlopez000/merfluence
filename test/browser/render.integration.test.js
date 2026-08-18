@@ -395,18 +395,34 @@ describe('CJK labels stay inside their box (issue #157)', () => {
   const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
   const graphemes = (s) => [...segmenter.segment(s)].map((g) => g.segment);
 
+  // 行頭禁則 / 行末禁則, the subset src/lib/cjk-line-break.ts enforces. Duplicated
+  // here on purpose: asserting against the module's own table would pass even if
+  // that table were emptied.
+  const NO_START = new Set([
+    ...'、。，．・：；？！゛゜ヽヾゝゞ々ー―‐’”）〕］｝〉》」』】〙〗»',
+    ...'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ',
+    ...'%‰℃℉,.!?:;)]}',
+  ]);
+  const NO_END = new Set([...'‘“（〔［｛〈《「『【〘〖«￥＄£＃＠([{']);
+
   /**
-   * No row may end in "-", and concatenating the rows must give back the same
-   * grapheme sequence as the source label. Together these pin the two ways
-   * Mermaid's breakString mangles Japanese: it hyphenates, and it iterates code
-   * points, which cuts 🇯🇵 / 👨‍👩‍👧‍👦 / 👍🏽 / 葛󠄀 in half.
+   * Every property a rendered row has to satisfy:
+   *
+   * - no trailing "-", and no grapheme cluster cut in half — the two ways
+   *   Mermaid's breakString mangles Japanese (it hyphenates, and it iterates
+   *   code points, which halves 🇯🇵 / 👨‍👩‍👧‍👦 / 👍🏽 / 葛󠄀);
+   * - no row opening with a 行頭禁則 character or closing with a 行末禁則 one.
+   *   The absence of this check is why a note rendered as `）ﾃｽﾄ環境…` shipped in
+   *   the first pass, so it belongs beside the containment checks rather than in
+   *   a suite of its own.
    */
   function expectCleanRows(labels, source) {
     for (const line of labels) {
       expect(line.endsWith('-'), `"${line}" is not hyphenated`).toBe(false);
+      expect(NO_START.has(line[0]), `"${line}" does not open a row (行頭禁則)`).toBe(false);
+      expect(NO_END.has(line.at(-1)), `"${line}" does not close a row (行末禁則)`).toBe(false);
     }
     const joined = labels.join('');
-    expect(graphemes(joined), 'no grapheme cluster split across rows').toEqual(graphemes(joined));
     for (const cluster of graphemes(joined)) {
       expect(source.includes(cluster), `cluster ${cluster} survived intact`).toBe(true);
     }
@@ -420,7 +436,7 @@ describe('CJK labels stay inside their box (issue #157)', () => {
       const host = mount(svg);
 
       const notes = [...host.querySelectorAll('g[data-et="note"]')];
-      expect(notes.length).toBe(2);
+      expect(notes.length).toBe(4);
       for (const note of notes) {
         const rect = note.querySelector('rect.note');
         const text = rows(note, 'text.noteText');
@@ -495,6 +511,50 @@ describe('CJK labels stay inside their box (issue #157)', () => {
         expect(text.textContent, 'no literal markup rendered').not.toContain('<br');
       }
       expect(multiRow, 'the fixture exercises the break').toBeGreaterThan(0);
+    },
+    RENDER_TIMEOUT,
+  );
+
+  it(
+    'keeps loop and alt titles inside the narrowest box Mermaid builds',
+    async () => {
+      // A loop around a self-message is the smallest control-structure box there
+      // is: actor.width (150, floored) + 2*boxMargin = 170 user units. The title
+      // is centred off-box by labelBoxWidth/2, so the right-hand half is the
+      // binding one. A budget derived by analogy with notes clipped here by 22u.
+      const source = fixtures['sequence-cjk-narrow'];
+      const { svg } = await renderDiagram({ source });
+      const host = mount(svg);
+
+      const groups = [...host.querySelectorAll('g[data-et="control-structure"]')];
+      expect(groups.length).toBeGreaterThanOrEqual(2);
+      for (const g of groups) {
+        const edges = [...g.querySelectorAll('line.loopLine')].map((l) =>
+          l.getBoundingClientRect(),
+        );
+        const left = Math.min(...edges.map((r) => r.left));
+        const right = Math.max(...edges.map((r) => r.right));
+        const rows = [...g.querySelectorAll('text.loopText, text.sectionTitle')].filter((t) =>
+          t.textContent.trim(),
+        );
+        expect(rows.length, 'the titles were broken into rows').toBeGreaterThan(2);
+        for (const row of rows) {
+          const r = row.getBoundingClientRect();
+          expect(r.width, `"${row.textContent}" was laid out`).toBeGreaterThan(0);
+          expect(r.left, `"${row.textContent}" within left edge`).toBeGreaterThanOrEqual(
+            left - TOLERANCE,
+          );
+          expect(r.right, `"${row.textContent}" within right edge`).toBeLessThanOrEqual(
+            right + TOLERANCE,
+          );
+        }
+        // Mermaid wraps the title as `[title]`; strip those before checking rows,
+        // since the brackets are its markup, not the author's text.
+        expectCleanRows(
+          rows.map((t) => t.textContent.replace(/^\[|\]$/g, '')).filter(Boolean),
+          source,
+        );
+      }
     },
     RENDER_TIMEOUT,
   );

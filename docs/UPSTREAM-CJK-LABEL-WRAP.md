@@ -132,34 +132,72 @@ depend on and DOMPurify remains the last pass.
 
 ## The budgets
 
-### Sequence over-note — 160px at `noteFontSize: 14`
+Each site gets a **budget** — the width the greedy fill aims for — and, where one
+can be derived with confidence, a **ceiling**: the width at which the text really
+would leave its box. The breaker only ever uses the ceiling to pull a 行頭禁則
+character back onto a line it cannot push down from (see "Kinsoku" below).
 
-With `L` the widest line after breaking and `mw = L + 2·wrapPadding`:
+| site               | budget | ceiling  | font                          |
+| ------------------ | ------ | -------- | ----------------------------- |
+| sequence over-note | 160px  | 230px    | `noteFontSize` 14             |
+| loop / alt title   | 100px  | _(none)_ | `messageFontSize` 16          |
+| journey tile       | 130px  | 140px    | `taskFontSize` 14, max 3 rows |
+| timeline node      | 140px  | 180px    | inherited 16px root           |
+
+### Sequence over-note — 160px, ceiling 230px
+
+An actor is never narrower than `conf.width` (150): `calculateActorMargins` floors
+it at `:4278` and `:3627` floors it again. So for a note spanning two adjacent
+actors:
 
 ```
-actor.margin = max(mw/2 + actorMargin − fromW/2 − toW/2, actorMargin)   (:4295-4296)
-box          = fromW/2 + actor.margin + toW/2 + actorMargin             (:4362)
-             ≥ max( L/2 + wrapPadding + 2·actorMargin,
-                    2·actorMargin + fromW/2 + toW/2 )
+box = fromW/2 + actor.margin + toW/2 + actorMargin ≥ 75 + 50 + 75 + 50 = 250
+text room = box − 2·noteMargin ≥ 230px
 ```
 
-Text fits when `L ≤ box − 2·noteMargin`; the binding branch gives `L ≤ 180`. Take
+**230px is the real containment limit, and the 160px budget is deliberate slack.**
+An earlier version of this document derived `L ≤ 180` from the other branch of
+`box`; that branch requires `L > 280` to be the active maximum, which contradicts
+its own conclusion, so it is unreachable. The correction matters because the
+ceiling is derived from 230.
 
-```
-L_max = 4·actorMargin − 2·wrapPadding − 2·noteMargin = 200 − 20 − 20 = 160px
-```
+The slack is not wasted. The width model charges uppercase Latin 0.5 em and
+trebuchet draws it nearer 0.72, so a token like `ERR_KAFKA_LAG_00042` is modelled
+at 133px and occupies nearer 190px. 70px of headroom is roughly what that error
+costs on a worst-case line.
 
-Cross-check: actor width has a floor of `conf.width` (150), so `box ≥ 250` and
-`160 + 20 ≤ 250`. ✓ Notes spanning three or more actors get a wider box, so they
-come out narrower than they had to be — never clipped. No line cap: `drawNote`
-(`:3326-3328`) sets the rect's _height_ from the measured text.
+No line cap: `drawNote` (`:3326-3328`) sets the rect's _height_ from the measured
+text.
 
-### Loop / alt title — 160px at `messageFontSize: 16`
+### Loop / alt title — 100px, no ceiling
 
-Same actor-derived geometry. The box height grows because
-`calculateTextDimensions` splits on the line-break regex before summing heights.
+Much narrower than the note budget, because a loop box is much narrower than a
+note box **and its title is not centred on it**. This one was measured in a real
+browser rather than derived by analogy — an earlier 160px, reasoned across from
+the note case, clipped by 22 user units:
 
-### Journey tile — 130px at `taskFontSize: 14`, **max 3 rows**
+- the narrowest control-structure box Mermaid builds wraps a self-message:
+  `actor.width` 150 (floored) + 2·`boxMargin` 10 = **170 user units**;
+- `drawLoop` centres the title at `startx + labelBoxWidth/2 + boxWidth/2`
+  (`:2873`) with `txt.width` unset, so the right-hand half is the binding one:
+  `85 − 25` = 60, i.e. the widest row may be **120**;
+- Mermaid then wraps the title as `[title]`, and that bracket lands on the row, so
+  the author's text gets **112** — take 100 for slack.
+
+For reference, upstream's own budget for this shape is
+`loopWidth − 2·wrapPadding` = 80, so 100 is not a density downgrade; it is the
+same order of magnitude without the hyphens.
+
+**No ceiling**, because 100 is already the worst-case floor and any loop body
+could be the self-message shape — there is no headroom to lend the kinsoku
+pull-back. `alt`'s `else` sections are drawn centred on the box (`:2888`, no
+`labelBoxWidth` offset) so they have more room, but they share the budget rather
+than carry a second one.
+
+`calculateTextDimensions` splits on the line-break regex before summing heights,
+so the box height grows to fit the rows.
+
+### Journey tile — 130px, ceiling 140px
 
 `conf.width` (150) − 2·`boxTextMargin` (5) = 140; take 130 for slack. The tile
 _height_ is fixed at 50 too, and `byTspan` centres rows on the box centre with
@@ -168,10 +206,77 @@ fourth spills below the tile. So the row count is capped and a longer label runs
 over on its final row instead — which bounds usable labels at ~27 CJK characters.
 Past that the label does not fit a 150×50 tile in any language.
 
-### Timeline node — 140px at the inherited 16px root font, no cap
+### Timeline node — 140px, ceiling 180px
 
-The helper's own threshold is 150 and the node interior is 190; 140 leaves slack
-for the width model's error. Height is elastic, so no cap is needed.
+The helper's own threshold is 150 and the node interior is `150 + 2·padding` = 190. 140 leaves slack for the width model's error, 180 keeps a margin inside the
+background. Height is elastic, so no cap is needed.
+
+## Unbreakable units, hard and soft
+
+Two kinds of run are held together on one line:
+
+- **Latin/number runs are hard.** `SonarQube`, `85.5%`, `1,500`, `v11.13.0`,
+  `build-2026-08-09-1142`, `2026-08-09T23:41:32+09:00` are never broken, whatever
+  they cost in line width — splitting an identifier across two rows of a note is a
+  worse defect than a wide row.
+- **Katakana runs are soft.** Japanese typesetting keeps a loanword whole, and the
+  first version of this pass did not: it produced `ブロッ` / `ク`,
+  `チェッ` / `クポイント`, `アッ` / `プロード` — legal under JIS X 4051, but every
+  one of them breaking straight after a small kana. A katakana run is now one
+  unit, _unless the word alone is wider than the budget_, in which case it goes
+  back to individual clusters, because a loanword longer than the whole line has
+  to break somewhere.
+
+`ー` (U+30FC) and the iteration marks join a katakana run. `・` (U+30FB) does not:
+it separates two loanwords, so it is a legitimate break opportunity — and it is
+already 行頭禁則, so it can never open a row.
+
+## Kinsoku
+
+行頭禁則 (may not begin a line) and 行末禁則 (may not end one) are corrected _at_
+the break, preferring **push-down**: the last unit of the current line goes down
+with the offender, rather than squeezing the offender onto a line that is already
+full. Pulling back is the other legal JIS X 4051 strategy, but it overruns the
+budget by a whole character, and the budget is what keeps the text in the box.
+
+At most one adjustment per boundary, and never one that would empty a line — a run
+of forbidden characters (`。。。`) would otherwise bounce a unit between rows
+forever. A slightly-off break is fine; a hang or an empty `<text>` row is not.
+
+**The one case push-down cannot serve** is a line holding a _single_ unbreakable
+unit followed by a character that may not open a line. Emptying it is not an
+option, so the first version of this pass simply accepted the violation, and
+rendered a note whose last row opened with `）`:
+
+```
+2026-08-09T23:41:32+09:00
+）ﾃｽﾄ環境ﾒﾄﾘｸｽ収集ｼｽﾃﾑ
+```
+
+That is what the ceiling is for. Given the real containment limit, the bracket is
+pulled back onto the timestamp's row instead. Sites with no ceiling (loop titles)
+keep the accept-as-is behaviour rather than guess at one.
+
+## Notes in wide diagrams under-fill, by design
+
+Every budget above is a **worst-case floor**, not the width of the box the note
+actually lands in. Measured from real exports:
+
+| note box        | widest row | fill |
+| --------------- | ---------- | ---- |
+| 250px (minimum) | 154px      | 67%  |
+| 606px           | 154px      | 26%  |
+| 619px           | 154px      | 26%  |
+
+So a note in a diagram whose actors have been pushed apart by long messages draws
+a narrow column of text inside a wide rectangle. That is ugly, and it is
+deliberate.
+
+Fixing it means predicting the real box width, and that is circular: the box width
+comes from actor margins, which come from message widths, which come from the same
+em model — and the model _over_-estimates lowercase Latin. Overestimating the box
+means budgeting too wide, which clips. Under-filling is recoverable; clipping is
+not, so the floor stands.
 
 ## Why widths are a table and not a measurement
 

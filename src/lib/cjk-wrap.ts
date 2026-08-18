@@ -38,29 +38,50 @@ import { splitFrontmatter } from './export-name.js';
 const BR = '<br>';
 
 /**
- * Budgets, in em of the font each site draws at. Derivations in the doc; the
- * short version:
+ * Budgets and ceilings, in em of the font each site draws at.
  *
- * - `note` — 160px at `noteFontSize: 14`. From Mermaid's own formulas, an over-note
- *   box is at least `4·actorMargin` wide, leaving `4·50 − 2·wrapPadding −
- *   2·noteMargin = 160px` of text. Notes spanning three or more actors get a wider
- *   box, so they come out narrower than they had to be — never clipped. No line
+ * `budgetEm` is the conservative target the greedy fill aims for. `ceilingEm` is
+ * the width at which the text really would leave its box; the breaker only ever
+ * uses it to pull a 行頭禁則 character back onto a line it cannot push down from
+ * (see breakCjkText). Derivations in the doc; the short version:
+ *
+ * - `note` — 160px at `noteFontSize: 14`, ceiling 230px. An actor is never
+ *   narrower than `conf.width` (150) — `calculateActorMargins` floors it at
+ *   `:4278` and `:3627` floors it again — so an over-note box is at least
+ *   `75 + actorMargin + 75 + actorMargin` = 250, leaving 230 after `2·noteMargin`.
+ *   The 160 is therefore deliberate slack, not the binding limit: the width model
+ *   charges uppercase Latin 0.5 em and trebuchet draws it nearer 0.72, so a token
+ *   like `ERR_KAFKA_LAG_00042` is modelled well under what it occupies. No line
  *   cap: `drawNote` sizes the rect's *height* from the measured text.
- * - `loop` — 160px at `messageFontSize: 16`. Same actor-derived geometry; the box
- *   height grows because `calculateTextDimensions` splits on the line-break regex.
+ * - `loop` — 100px at `messageFontSize: 16`, and **no ceiling**. Much narrower
+ *   than the note budget, because a loop box is much narrower than a note box and
+ *   its title is not centred on it. Measured, not derived by analogy: a loop
+ *   wrapping only a self-message is the narrowest box Mermaid builds, 170 user
+ *   units (`actor.width` 150 + 2·`boxMargin` 10), and `drawLoop` centres the
+ *   title at `startx + labelBoxWidth/2 + boxWidth/2` (`:2873`), so the binding
+ *   right-hand half is `85 − 25` = 60 and the widest row may be 120. Mermaid then
+ *   wraps the title as `[title]`, and that bracket lands on the row, so the text
+ *   itself gets 112 — take 100 for slack. For reference, upstream's own budget for
+ *   this shape is `loopWidth − 2·wrapPadding` = 80, so this is not a downgrade in
+ *   density; it is the same order, without the hyphens.
+ *
+ *   No ceiling: 100 is already the worst-case floor, and a `loop` body could
+ *   always be the self-message shape, so there is no headroom to lend the
+ *   kinsoku pull-back.
  * - `journey` — `width` 150 − 2·`boxTextMargin` 5 = 140, take 130 for slack, at
- *   `taskFontSize: 14`. Here the box *height* is fixed at 50 too, and the tile
- *   centres its rows, so three lines (42px) fit and a fourth spills below the
- *   tile — hence `maxLines`.
+ *   `taskFontSize: 14`; ceiling is that same 140. Here the box *height* is fixed
+ *   at 50 too, and the tile centres its rows, so three lines (42px) fit and a
+ *   fourth spills below the tile — hence `maxLines`.
  * - `timeline` — the one that is NOT `byTspan`: `drawNode` wraps against a
- *   hardcoded 150 and then grows the node's height from the measured bbox, so the
- *   budget is 140px for slack at the inherited 16px root font, with no line cap.
+ *   hardcoded 150 and then grows the node's height from the measured bbox. The
+ *   node background is `150 + 2·padding` = 190 wide, so 140 is the budget and 180
+ *   the ceiling, both at the inherited 16px root font. No line cap.
  */
 const BUDGETS = {
-  note: { budgetEm: 160 / 14 },
-  loop: { budgetEm: 160 / 16 },
-  journey: { budgetEm: 130 / 14, maxLines: 3 },
-  timeline: { budgetEm: 140 / 16 },
+  note: { budgetEm: 160 / 14, ceilingEm: 230 / 14 },
+  loop: { budgetEm: 100 / 16 },
+  journey: { budgetEm: 130 / 14, ceilingEm: 140 / 14, maxLines: 3 },
+  timeline: { budgetEm: 140 / 16, ceilingEm: 180 / 16 },
 } as const;
 
 /**
@@ -77,7 +98,10 @@ const EXPLICIT_WRAP = /^\s*:?(?:no)?wrap:/i;
  * fits. That last two are what keeps every existing Latin diagram — and every
  * fixture in test/ — rendering exactly as it did before.
  */
-function wrapLabel(label: string, budget: { budgetEm: number; maxLines?: number }): string {
+function wrapLabel(
+  label: string,
+  budget: { budgetEm: number; ceilingEm?: number; maxLines?: number },
+): string {
   if (label.includes('<br')) return label;
   if (EXPLICIT_WRAP.test(label)) return label;
   if (!hasEastAsian(label)) return label;
