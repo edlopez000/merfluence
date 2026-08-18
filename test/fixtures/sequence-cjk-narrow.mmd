@@ -1,0 +1,10 @@
+sequenceDiagram
+    participant A as 甲
+    loop 失敗した検査を、成功するまで最大3回まで繰り返し実行する。
+        A->>A: 再試行
+    end
+    alt 品質ゲートを通過した場合はマージを実行する
+        A->>A: マージ
+    else 通過しない場合は担当者へ通知する
+        A->>A: 通知
+    end
