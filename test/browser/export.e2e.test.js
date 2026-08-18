@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderDiagram } from '../../src/lib/render.js';
-import { download, exportPng, exportSvg } from '../../src/lib/png-export.js';
+import { copyPngToClipboard, download, exportPng, exportSvg } from '../../src/lib/png-export.js';
 import { exportFilename } from '../../src/lib/export-name.js';
 
 /**
@@ -264,7 +264,8 @@ describe('exportPng background', () => {
     const byDefault = await exportedCorners(mountSvg(ODD_SVG));
     const explicit = await exportedCorners(mountSvg(ODD_SVG), { background: null });
 
-    // Alpha zero, which is what the reader gets from "PNG (transparent)".
+    // Alpha zero, which is what the reader gets with the Export menu's
+    // "Transparent background" option checked.
     expect(byDefault.first[3]).toBe(0);
     expect(byDefault.last[3]).toBe(0);
     expect(explicit.first[3]).toBe(0);
@@ -280,6 +281,127 @@ describe('exportPng background', () => {
     bitmap.close();
 
     expect(size).toEqual({ width: Math.ceil(120.25), height: Math.ceil(60.25) });
+  });
+});
+
+/**
+ * Copy-to-clipboard: the same rasterizer as exportPng, handed to the system
+ * clipboard instead of to a download.
+ *
+ * navigator.clipboard.write is spied rather than driven for real, matching how
+ * the anchor click is handled above — a headless page is not focused, and Chrome
+ * rejects a clipboard write from an unfocused document with NotAllowedError. The
+ * spy also means the vitest browser project needs no clipboard permission grant.
+ * What is asserted for real is everything on our side of that call: the
+ * ClipboardItem's payload is a genuine PNG of the diagram, and it is offered
+ * before the raster has resolved.
+ */
+describe('copyPngToClipboard', () => {
+  let writeSpy;
+  let realClipboard;
+
+  beforeEach(() => {
+    // Redefined rather than spied: navigator.clipboard is a read-only accessor,
+    // so vi.spyOn cannot replace it and vi.restoreAllMocks would not put it
+    // back. The original descriptor is captured and restored by hand.
+    writeSpy = vi.fn(() => Promise.resolve());
+    realClipboard = Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { write: writeSpy },
+    });
+  });
+
+  afterEach(() => {
+    delete navigator.clipboard;
+    if (realClipboard) Object.defineProperty(Navigator.prototype, 'clipboard', realClipboard);
+  });
+
+  /** The PNG blob the ClipboardItem was built around. */
+  async function copiedBlob() {
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    const [items] = writeSpy.mock.calls[0];
+    expect(items).toHaveLength(1);
+    expect(items[0].types).toContain('image/png');
+    return items[0].getType('image/png');
+  }
+
+  it('offers the clipboard a real PNG of the diagram, at the export size', async () => {
+    const { svg } = await renderDiagram({ source: 'flowchart TD\n  A --> B', theme: 'light' });
+    const el = mountSvg(svg);
+    const box = el.viewBox.baseVal;
+
+    await copyPngToClipboard(el);
+
+    const blob = await copiedBlob();
+    expect(blob.type).toBe('image/png');
+    const bitmap = await createImageBitmap(blob);
+    // 2x the viewBox, the same guarantee the download path carries: a 1x
+    // flowchart pasted into a deck looks like a fax.
+    expect({ width: bitmap.width, height: bitmap.height }).toEqual({
+      width: Math.ceil(box.width * 2),
+      height: Math.ceil(box.height * 2),
+    });
+    bitmap.close();
+    // The clipboard is the destination; nothing was downloaded on the way.
+    expect(clickSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The regression that would otherwise only ever fail on a real Safari.
+   *
+   * clipboard.write() has to be reached inside the click's transient user
+   * activation, and any await before it spends that window. So the raster
+   * promise is handed to ClipboardItem unresolved, and the write is issued in
+   * the caller's own task — which is what this asserts by not awaiting.
+   */
+  it('issues the write before the rasterize resolves', () => {
+    const el = mountSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">' +
+        '<rect width="40" height="40" fill="#0c66e4"/></svg>',
+    );
+
+    const pending = copyPngToClipboard(el);
+
+    // Synchronous: no await between the call and here. If png-export ever grows
+    // an `await` above its write, this is the only test that notices.
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    return pending;
+  });
+
+  it('carries the background choice into the copied pixels', async () => {
+    const el = mountSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">' +
+        '<rect x="10" y="10" width="20" height="20" fill="#0c66e4"/></svg>',
+    );
+
+    await copyPngToClipboard(el, { background: '#ff0000' });
+
+    const bitmap = await createImageBitmap(await copiedBlob());
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    // The corner, which is backdrop rather than diagram: opaque red when a
+    // background was asked for, and it is the "with background" item that makes
+    // a dark-themed diagram survive a paste into dark-mode Slack.
+    const corner = Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
+    expect(corner).toEqual([255, 0, 0, 255]);
+    bitmap.close();
+  });
+
+  it('rejects rather than throwing when the host blocks the clipboard', async () => {
+    writeSpy.mockImplementation(() =>
+      Promise.reject(new DOMException('Write permission denied.', 'NotAllowedError')),
+    );
+    const el = mountSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40"/></svg>',
+    );
+
+    // A rejected promise, not a synchronous throw: the reader view awaits this
+    // inside a try/catch and turns it into the visible "clipboard is blocked"
+    // message. A synchronous throw would escape that await.
+    await expect(copyPngToClipboard(el)).rejects.toThrow(/permission denied/i);
   });
 });
 

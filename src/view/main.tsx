@@ -15,19 +15,20 @@ import {
 } from '../lib/host.js';
 import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
-import { exportPng, exportSvg } from '../lib/png-export.js';
+import { copyPngToClipboard, exportPng, exportSvg } from '../lib/png-export.js';
 import { exportFilename } from '../lib/export-name.js';
 import { Stage } from '../components/Stage.jsx';
 import type { StageActions } from '../components/Stage.jsx';
 
 /**
- * The reader-only toolbar actions — copy the diagram source, and export it as
- * PNG or SVG. These are injected into the shared Stage's toolbar rather than
- * living inside it, so the config bundle never pulls in png-export.js or the
- * clipboard path: the editor has no use for either.
+ * The reader-only toolbar actions — copy the diagram source, copy it as an
+ * image, and export it as PNG or SVG. These are injected into the shared
+ * Stage's toolbar rather than living inside it, so the config bundle never
+ * pulls in png-export.js or the clipboard path: the editor has no use for
+ * either.
  */
 /**
- * How long the "Exporting…" chip stays up at minimum.
+ * How long the busy chip stays up at minimum.
  *
  * A PNG export is not instant — it rasterizes the diagram at twice its own size
  * and encodes it (measured on a 1983x2693 sequence diagram: ~100ms for a 979KB
@@ -39,6 +40,9 @@ import type { StageActions } from '../components/Stage.jsx';
  */
 const MIN_BUSY_MS = 400;
 
+/** How long a "done" acknowledgement stays up, matching the Copied label flip. */
+const DONE_MS = 1500;
+
 function ViewActions({
   source,
   theme,
@@ -47,7 +51,20 @@ function ViewActions({
 }: StageActions & { source: string; theme: 'light' | 'dark' }) {
   const [copied, setCopied] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  // The label of the work in flight ('Exporting…' / 'Copying…'), or null when
+  // idle. A label rather than a boolean because the chip has to name what it is
+  // waiting on now that two different actions can be the thing waited on; it
+  // doubles as the re-entrancy gate it always was.
+  const [busy, setBusy] = useState<string | null>(null);
+  // A transient acknowledgement in the same chip, with no spinner. The export
+  // menu closes on click, so the "Copied" label flip that Copy source uses has
+  // nowhere to land here — the chip is the only surface a menu action has.
+  const [done, setDone] = useState<string | null>(null);
+  // Whether the two image outputs should be alpha-zero instead of painted on
+  // the page surface. Component state, so the choice is sticky for as long as
+  // the macro is mounted but never reaches macro config — where the image is
+  // being pasted is the reader's business, not a property of the page.
+  const [transparent, setTransparent] = useState(false);
   const exportRef = useRef<HTMLDivElement | null>(null);
 
   // Close the export menu on an outside click or Escape, the two things a user
@@ -87,14 +104,32 @@ function ViewActions({
     exportSvg(svg, exportFilename(source, svg, 'svg'));
   };
 
+  /**
+   * The colour to paint behind the diagram, for whichever image action was
+   * clicked. Resolved per click rather than memoised: surfaceColor reads the
+   * live --ds-surface token, so this follows a theme flip with no extra wiring.
+   * Transparent means alpha-zero, and surfaceColor is then not consulted at all.
+   */
+  const backdrop = () => (transparent ? null : surfaceColor(theme));
+
+  /** Hold the busy chip to its floor, then clear it. Shared so both actions
+   *  acknowledge a click the same way. */
+  const holdBusy = async (started: number) => {
+    const elapsed = Date.now() - started;
+    if (elapsed < MIN_BUSY_MS) {
+      await new Promise((resolve) => setTimeout(resolve, MIN_BUSY_MS - elapsed));
+    }
+    setBusy(null);
+  };
+
   const savePng = async (background: string | null) => {
     const svg = getSvg();
     // Already running: a second export would start another full-size rasterize
     // on top of the first, which is exactly what someone does when the first
     // click appeared to do nothing. The disabled trigger below is the visible
     // half of this; the guard is what actually holds.
-    if (!svg || exporting) return;
-    setExporting(true);
+    if (!svg || busy) return;
+    setBusy('Exporting…');
     const started = Date.now();
     try {
       // Give the chip a frame to paint before the work starts. Everything up to
@@ -105,11 +140,36 @@ function ViewActions({
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
     } finally {
-      const elapsed = Date.now() - started;
-      if (elapsed < MIN_BUSY_MS) {
-        await new Promise((resolve) => setTimeout(resolve, MIN_BUSY_MS - elapsed));
-      }
-      setExporting(false);
+      await holdBusy(started);
+    }
+  };
+
+  /**
+   * The same PNG as savePng, onto the clipboard instead of into Downloads.
+   *
+   * Note what this does *not* do: wait a frame before starting, the way savePng
+   * does to let its chip paint. copyPngToClipboard has to reach
+   * `clipboard.write()` inside the click's user-activation window, and an await
+   * here would spend it (see the comment in png-export.ts). setBusy is
+   * synchronous, so the chip is still requested before the work begins — it just
+   * paints on whatever frame the browser gives it rather than a guaranteed one.
+   */
+  const copyImage = async (background: string | null) => {
+    const svg = getSvg();
+    if (!svg || busy) return;
+    setBusy('Copying…');
+    const started = Date.now();
+    try {
+      await copyPngToClipboard(svg, { background });
+      setDone('Copied image');
+      setTimeout(() => setDone(null), DONE_MS);
+    } catch {
+      // Deliberately not the underlying error: a blocked clipboard surfaces as
+      // NotAllowedError or a bare TypeError from a missing ClipboardItem, and
+      // neither tells the reader what to do instead.
+      setFailure('Clipboard is blocked. Use PNG export instead.');
+    } finally {
+      await holdBusy(started);
     }
   };
 
@@ -123,39 +183,42 @@ function ViewActions({
           type="button"
           aria-haspopup="menu"
           aria-expanded={exportOpen}
-          disabled={exporting}
+          disabled={busy !== null}
           onClick={() => setExportOpen((open) => !open)}
         >
           Export <span aria-hidden="true">▾</span>
         </button>
         {exportOpen && (
           <div className="export-menu" role="menu">
-            {/* With-background first: it is the safer paste. Transparent is the
-                one you want when compositing onto a surface you control, but
-                dropped somewhere dark — Slack in dark mode, a dark slide — a
-                dark-themed diagram becomes light text on nothing. The reader
-                clicking here is the one who knows where the image is going. The
-                colour is resolved at click time, so it follows a theme flip
-                with no extra wiring. */}
+            {/* Copy before download, because pasting is the shorter route to
+                everywhere these images go — a Slack message, a slide — and a
+                download only to re-upload is the trip copying removes.
+
+                Three actions and one modifier, rather than an action per
+                combination: spelling the backdrop out on every item made a
+                five-item cross-product of two axes the reader had to read at
+                once. SVG takes no backdrop at all — Mermaid paints none and the
+                vector file carries none — so the toggle below governs only the
+                two raster outputs. */}
             <button
               type="button"
               role="menuitem"
               onClick={() => {
-                savePng(surfaceColor(theme));
+                copyImage(backdrop());
                 setExportOpen(false);
               }}
             >
-              PNG (with background)
+              Copy image
             </button>
             <button
               type="button"
               role="menuitem"
               onClick={() => {
-                savePng(null);
+                savePng(backdrop());
                 setExportOpen(false);
               }}
             >
-              PNG (transparent)
+              PNG
             </button>
             <button
               type="button"
@@ -167,6 +230,29 @@ function ViewActions({
             >
               SVG
             </button>
+            {/* Off by default, because with-background is the safer paste.
+                Transparent is what you want when compositing onto a surface you
+                control, but dropped somewhere dark — Slack in dark mode, a dark
+                slide — a dark-themed diagram becomes light text on nothing. The
+                reader who checks this is the one who knows where the image is
+                going.
+
+                role="menuitemcheckbox" so it is announced as a checkable option
+                with its state, not as a fourth thing to do. And no
+                setExportOpen(false): it modifies the actions above rather than
+                being one, so the menu has to survive the click that sets it. */}
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={transparent}
+              className="option"
+              onClick={() => setTransparent((on) => !on)}
+            >
+              <span className="check" aria-hidden="true">
+                {transparent ? '✓' : ''}
+              </span>
+              Transparent background
+            </button>
           </div>
         )}
       </div>
@@ -175,11 +261,16 @@ function ViewActions({
           export. Without that the toolbar fades out the moment the pointer
           leaves and the export runs with nothing on screen at all, which is the
           bug this is fixing. role="status" makes the same announcement to a
-          screen reader; the spinner is decorative and stays out of the tree. */}
-      {exporting && (
+          screen reader; the spinner is decorative and stays out of the tree.
+
+          Busy wins over done, so a second action started while an
+          acknowledgement is still up reads as in-progress rather than finished.
+          The spinner is tied to busy for the same reason: a chip that says
+          "Copied image" next to a spinner would be saying two things. */}
+      {(busy ?? done) && (
         <span className="status busy" role="status">
-          <span className="spinner" aria-hidden="true" />
-          Exporting…
+          {busy && <span className="spinner" aria-hidden="true" />}
+          {busy ?? done}
         </span>
       )}
     </>

@@ -34,6 +34,7 @@ Merfluence is a free, open-source Confluence Cloud macro, built on [Atlassian Fo
 - Automatic light/dark theming that follows Confluence
 - A per-diagram display size (Small, Medium, or Large), or the diagram's natural size
 - Pan, zoom, and fullscreen navigation, with export to SVG or PNG — the PNG either transparent, or on a background matching the page
+- Copy the diagram straight to the clipboard as an image, ready to paste into a chat or a slide
 - Full keyboard operation — focus a diagram and pan, zoom, reset, or go fullscreen without a mouse
 - A text alternative on every diagram for screen readers, from your own `accTitle` / `accDescr`
 - Copy the source from any rendered diagram
@@ -53,7 +54,7 @@ See [Development](#development) to build and deploy your own instance.
 1. On a Confluence page, type `/mermaid` and insert the **Merfluence** macro.
 2. Write Mermaid in the editor, start from a template, drag in a `.mmd`/Markdown file, or paste a Mermaid Live Editor link — the preview updates as you type.
 3. Optionally set the display size, theme, or pinned Mermaid version, then **Save diagram**.
-4. Readers see the rendered diagram with pan, zoom, fullscreen, and SVG/PNG export.
+4. Readers see the rendered diagram with pan, zoom, fullscreen, SVG/PNG export, and copy-as-image.
 
 ![A rendered flowchart on a Confluence page with the pan, zoom, and export toolbar](docs/images/reader-view.webp)
 
@@ -142,7 +143,7 @@ The formal statement of all this is the [privacy policy](https://edwardlopez.dev
 
 ## Limitations
 
-**Word export.** Forge macros require an `adfExport` function to appear in Word exports, but adding one currently overrides the high-fidelity PDF renderer with the same limited output ([CONFCLOUD-83083](https://jira.atlassian.com/browse/CONFCLOUD-83083)). Rather than degrade the common case to serve the rare one, Merfluence ships no exporter; use the toolbar's SVG or PNG download instead.
+**Word export.** Forge macros require an `adfExport` function to appear in Word exports, but adding one currently overrides the high-fidelity PDF renderer with the same limited output ([CONFCLOUD-83083](https://jira.atlassian.com/browse/CONFCLOUD-83083)). Rather than degrade the common case to serve the rare one, Merfluence ships no exporter; use the toolbar's SVG or PNG download, or copy the diagram as an image and paste it in, instead.
 
 ## Development
 

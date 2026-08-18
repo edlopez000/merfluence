@@ -102,12 +102,14 @@ describe('the export progress chip', () => {
 });
 
 /**
- * The export menu grew from "PNG"/"SVG" to the transparent / with-background
- * pair, roughly tripling its widest label. `.export-menu` is absolutely
- * positioned at `right: 0`, so it grows leftward — which is fine until the macro
- * is in a narrow column and the popup runs off the left edge of the page. That
- * is a pure CSS outcome, invisible to the jsdom suite in test/view-app.test.jsx,
- * so the real labels are measured here against the stylesheet that ships.
+ * The export menu grew from "PNG"/"SVG" to a five-item cross-product of format
+ * and backdrop, roughly tripling its widest label, and then collapsed back to
+ * three actions plus a "Transparent background" toggle — which is now the widest
+ * label in it. `.export-menu` is absolutely positioned at `right: 0`, so it grows
+ * leftward — which is fine until the macro is in a narrow column and the popup
+ * runs off the left edge of the page. That is a pure CSS outcome, invisible to
+ * the jsdom suite in test/view-app.test.jsx, so the real labels are measured here
+ * against the stylesheet that ships.
  */
 describe('the export menu at its real label widths', () => {
   /** The open menu, anchored right, inside a root of the given width. */
@@ -120,9 +122,14 @@ describe('the export menu at its real label widths', () => {
       '<div class="toolbar" role="toolbar">' +
       '<div class="export"><button type="button">Export ▾</button>' +
       '<div class="export-menu" role="menu">' +
-      '<button type="button" role="menuitem">PNG (with background)</button>' +
-      '<button type="button" role="menuitem">PNG (transparent)</button>' +
+      // Kept in step with src/view/main.tsx by hand. The width assertions below
+      // are only worth anything against the labels that actually ship, and the
+      // toggle carries the longest of them.
+      '<button type="button" role="menuitem">Copy image</button>' +
+      '<button type="button" role="menuitem">PNG</button>' +
       '<button type="button" role="menuitem">SVG</button>' +
+      '<button type="button" role="menuitemcheckbox" aria-checked="false" class="option">' +
+      '<span class="check" aria-hidden="true"></span>Transparent background</button>' +
       '</div></div></div>';
     document.body.append(mounted);
     return mounted.querySelector('.export-menu');
@@ -148,11 +155,27 @@ describe('the export menu at its real label widths', () => {
     // "SVG" cannot wrap, so it is the reference height for one line of text.
     const oneLine = items.at(-1).getBoundingClientRect().height;
     for (const item of items) {
-      // A wrapped "PNG (with background)" would be a line-box taller than that.
+      // A wrapped "Copy image" would be a line-box taller than that.
       expect(item.getBoundingClientRect().height).toBe(oneLine);
       // ...and the menu sizes to its widest child, so the label must also fit
       // without being clipped — equal heights alone would not rule that out.
       expect(item.scrollWidth).toBeLessThanOrEqual(item.clientWidth);
     }
+  });
+
+  // The toggle is measured apart from the loop above: it carries the separator's
+  // padding and border, so its box is legitimately taller than one line of text.
+  // Its *label* still has to fit on one line, which is what the widest string in
+  // the menu is at risk of failing.
+  it('fits the toggle label on one line too, tick and all', async () => {
+    const menu = mountMenu('600px');
+    await settle();
+
+    const option = menu.querySelector('[role="menuitemcheckbox"]');
+    const svg = [...menu.querySelectorAll('[role="menuitem"]')].at(-1);
+    expect(option.scrollWidth).toBeLessThanOrEqual(option.clientWidth);
+    // One line of text plus the separator's own padding, and nothing more.
+    const textHeight = svg.getBoundingClientRect().height;
+    expect(option.getBoundingClientRect().height).toBeLessThan(textHeight * 2);
   });
 });
