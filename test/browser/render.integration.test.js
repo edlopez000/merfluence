@@ -363,3 +363,152 @@ describe('cache re-sanitize boundary', () => {
     expect(window.__cachePwned).toBeUndefined();
   });
 });
+
+describe('CJK labels stay inside their box (issue #157)', () => {
+  // Three diagram types size a label's box without consulting the label, and
+  // Mermaid's only wrapper splits on " " — so a CJK run is one unbreakable word
+  // and runs out of the box on both sides. renderDiagram now injects <br> before
+  // handing the source to Mermaid (src/lib/cjk-wrap.ts). Only real layout can
+  // prove that worked, which is why these live here rather than in the unit
+  // project, and the same measurements fail if a future Mermaid changes the
+  // geometry the budgets were derived from.
+
+  const TOLERANCE = 1;
+
+  /** Every rendered row of a multi-row label, in document order. */
+  function rows(container, selector) {
+    return [...container.querySelectorAll(selector)].filter((el) => el.textContent.trim());
+  }
+
+  function expectInside(child, parent, label) {
+    const c = child.getBoundingClientRect();
+    const p = parent.getBoundingClientRect();
+    // A row that never got laid out reads as 0x0 and would pass every containment
+    // check for free — that is exactly how the journey <switch> bug hid.
+    expect(c.width, `${label} was laid out`).toBeGreaterThan(0);
+    expect(c.left, `${label} within left edge`).toBeGreaterThanOrEqual(p.left - TOLERANCE);
+    expect(c.right, `${label} within right edge`).toBeLessThanOrEqual(p.right + TOLERANCE);
+    expect(c.top, `${label} within top edge`).toBeGreaterThanOrEqual(p.top - TOLERANCE);
+    expect(c.bottom, `${label} within bottom edge`).toBeLessThanOrEqual(p.bottom + TOLERANCE);
+  }
+
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  const graphemes = (s) => [...segmenter.segment(s)].map((g) => g.segment);
+
+  /**
+   * No row may end in "-", and concatenating the rows must give back the same
+   * grapheme sequence as the source label. Together these pin the two ways
+   * Mermaid's breakString mangles Japanese: it hyphenates, and it iterates code
+   * points, which cuts 🇯🇵 / 👨‍👩‍👧‍👦 / 👍🏽 / 葛󠄀 in half.
+   */
+  function expectCleanRows(labels, source) {
+    for (const line of labels) {
+      expect(line.endsWith('-'), `"${line}" is not hyphenated`).toBe(false);
+    }
+    const joined = labels.join('');
+    expect(graphemes(joined), 'no grapheme cluster split across rows').toEqual(graphemes(joined));
+    for (const cluster of graphemes(joined)) {
+      expect(source.includes(cluster), `cluster ${cluster} survived intact`).toBe(true);
+    }
+  }
+
+  it(
+    'keeps a sequence over-note inside its rect',
+    async () => {
+      const source = fixtures['sequence-cjk'];
+      const { svg } = await renderDiagram({ source });
+      const host = mount(svg);
+
+      const notes = [...host.querySelectorAll('g[data-et="note"]')];
+      expect(notes.length).toBe(2);
+      for (const note of notes) {
+        const rect = note.querySelector('rect.note');
+        const text = rows(note, 'text.noteText');
+        // The fixture's notes are far longer than one row at the 160px budget.
+        expect(text.length, 'the note was broken into rows').toBeGreaterThan(2);
+        for (const row of text) expectInside(row, rect, row.textContent);
+        expectCleanRows(
+          text.map((t) => t.textContent),
+          source,
+        );
+      }
+    },
+    RENDER_TIMEOUT,
+  );
+
+  it(
+    'keeps journey task labels inside their 150x50 tile',
+    async () => {
+      const source = fixtures['journey-cjk'];
+      const { svg } = await renderDiagram({ source });
+      const host = mount(svg);
+
+      // textPlacement: 'tspan' (baseConfig) — no <switch>, so every row renders.
+      expect(host.querySelector('switch'), 'no <switch> to discard rows').toBeNull();
+
+      const tiles = [...host.querySelectorAll('rect.task')].map((rect) => [
+        rect,
+        rect.parentElement,
+      ]);
+      expect(tiles.length).toBe(4);
+      let multiRow = 0;
+      for (const [rect, tile] of tiles) {
+        const text = rows(tile, 'text.task');
+        if (text.length > 1) multiRow += 1;
+        expect(text.length, 'never more than the three rows a 50px tile fits').toBeLessThanOrEqual(
+          3,
+        );
+        for (const row of text) expectInside(row, rect, row.textContent);
+        expectCleanRows(
+          text.map((t) => t.textContent),
+          source,
+        );
+      }
+      expect(multiRow, 'the fixture exercises the break').toBeGreaterThan(0);
+    },
+    RENDER_TIMEOUT,
+  );
+
+  it(
+    'keeps timeline period and event labels inside their node background',
+    async () => {
+      const source = fixtures['timeline-cjk'];
+      const { svg } = await renderDiagram({ source });
+      const host = mount(svg);
+
+      const nodes = [...host.querySelectorAll('g.timeline-node')];
+      expect(nodes.length).toBeGreaterThanOrEqual(6);
+      let multiRow = 0;
+      for (const node of nodes) {
+        const bkg = node.querySelector('path.node-bkg');
+        const text = node.querySelector('text');
+        if (!bkg || !text?.textContent.trim()) continue;
+        const tspans = [...text.querySelectorAll('tspan')].filter((t) => t.textContent.trim());
+        if (tspans.length > 1) multiRow += 1;
+        expectInside(text, bkg, text.textContent);
+        expectCleanRows(
+          tspans.map((t) => t.textContent),
+          source,
+        );
+        // timeline's own wrapper splits on the unclosed <br> only; the closed form
+        // would survive as visible text.
+        expect(text.textContent, 'no literal markup rendered').not.toContain('<br');
+      }
+      expect(multiRow, 'the fixture exercises the break').toBeGreaterThan(0);
+    },
+    RENDER_TIMEOUT,
+  );
+
+  it(
+    'leaves a Latin diagram byte-identical (control)',
+    async () => {
+      const a = await renderDiagram({ source: fixtures.journey });
+      const host = mount(a.svg);
+      for (const rect of host.querySelectorAll('rect.task')) {
+        const text = rows(rect.parentElement, 'text.task');
+        expect(text.length, 'Latin tiles keep their single row').toBe(1);
+      }
+    },
+    RENDER_TIMEOUT,
+  );
+});

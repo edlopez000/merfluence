@@ -79,7 +79,7 @@ function stripQuotes(value: string): string {
  * Scanning the whole string for both would let a frontmatter key answer a
  * question about the body.
  */
-function splitFrontmatter(source: string): { front: string; body: string } {
+export function splitFrontmatter(source: string): { front: string; body: string } {
   const match = /^\ufeff?[ \t]*---[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*---[ \t]*(?:\r?\n|$)/.exec(
     source,
   );

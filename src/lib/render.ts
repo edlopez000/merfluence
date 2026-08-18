@@ -2,6 +2,7 @@ import DOMPurify from 'dompurify';
 import { ensureAccessibleName } from './a11y-name.js';
 import { centerMindmapLabels } from './mindmap-labels.js';
 import { loadMermaid, resolveMajor } from './mermaid-registry.js';
+import { wrapCjkLabels } from './cjk-wrap.js';
 
 /**
  * Hard cap on diagram source length, matching Mermaid's historical default
@@ -60,7 +61,15 @@ function baseConfig({ theme }: { theme: string }) {
     class: { htmlLabels: false, useMaxWidth },
     state: { useMaxWidth },
     er: { useMaxWidth },
-    journey: { useMaxWidth },
+    // textPlacement defaults to 'fo', which wraps a journey tile's label in an
+    // SVG <switch>: a <foreignObject> carrying the HTML label, then a <text> per
+    // line as the fallback. htmlLabels: false plus DOMPurify's SVG profile always
+    // remove the foreignObject here, and <switch> renders only its FIRST
+    // surviving child — so any multi-line label was silently truncated to its
+    // first row. 'tspan' selects the same fallback renderer directly, with the
+    // task <g> as its parent and no <switch> to discard the rest. Single-line
+    // labels are unaffected; multi-line ones (see cjk-wrap.ts) now all render.
+    journey: { useMaxWidth, textPlacement: 'tspan' },
     gantt: { useMaxWidth },
     pie: { useMaxWidth },
     // The rest of the template types. Every section below exposes useMaxWidth in
@@ -390,8 +399,13 @@ export async function renderDiagram({
   if (!trimmed) throw new Error('Diagram is empty');
   enforceSourceLimit(trimmed);
 
+  // Inject line breaks into CJK labels Mermaid would otherwise draw outside their
+  // box. Render-time only: the source persisted to macro config is never touched,
+  // and validate() keeps reporting errors against what the author typed.
+  const wrapped = wrapCjkLabels(trimmed);
+
   const major = resolveMajor(versionPref);
-  const { svg } = await withMermaidLock(async () => {
+  const render = async (text: string) => {
     const mermaid = await loadMermaid(versionPref);
     initializeOnce(mermaid, major, { theme });
 
@@ -400,9 +414,23 @@ export async function renderDiagram({
     // — a real Mermaid failure mode. There, parse() screens the source first.
     // Major 11 honors the flag (set in baseConfig): render() cleans up its temp
     // elements and rethrows, so the same source parses once instead of twice.
-    if (major !== '11') await mermaid.parse(trimmed);
+    if (major !== '11') await mermaid.parse(text);
 
-    return mermaid.render(nextId(), trimmed);
+    return mermaid.render(nextId(), text);
+  };
+
+  const { svg } = await withMermaidLock(async () => {
+    if (wrapped === trimmed) return render(trimmed);
+    // The wrap pass must never be able to turn a working diagram into an error
+    // banner — including the case where the injected breaks push the string past
+    // Mermaid's maxTextSize, which enforceSourceLimit measured before them. If the
+    // transformed source fails, fall back to the author's own text and let any
+    // genuine syntax error surface from that.
+    try {
+      return await render(wrapped);
+    } catch {
+      return render(trimmed);
+    }
   });
   // Centre mindmap labels and name the graphic before sanitizing, so DOMPurify
   // stays the last pass over anything that reaches a reader's DOM. The cache
