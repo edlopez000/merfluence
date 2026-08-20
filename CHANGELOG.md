@@ -9,6 +9,22 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.6.0](https://github.com/edlopez000/merfluence/compare/v1.5.0...v1.6.0) (2026-08-20)
+
+
+### Features
+
+* add loading indicators, and drop the debounce from discrete editor actions ([#172](https://github.com/edlopez000/merfluence/issues/172)) ([675db2a](https://github.com/edlopez000/merfluence/commit/675db2a8bacf13dcde979b03c00de063d538287d))
+* copy the diagram to the clipboard as an image ([#173](https://github.com/edlopez000/merfluence/issues/173)) ([bd02acd](https://github.com/edlopez000/merfluence/commit/bd02acd6804e2df21313e715c765d5e56bff8fb2))
+
+
+### Bug Fixes
+
+* declare the Forge secrets so workflow_call can resolve them ([#164](https://github.com/edlopez000/merfluence/issues/164)) ([e556f5b](https://github.com/edlopez000/merfluence/commit/e556f5b367f00cdee8db3ab2d2630320a553e7c9))
+* keep CJK labels inside sequence, journey and timeline boxes ([#174](https://github.com/edlopez000/merfluence/issues/174)) ([196b740](https://github.com/edlopez000/merfluence/commit/196b740d242e9ca16e7219b5e089b881939f2612))
+* keep the export menu inside a short macro's iframe ([#175](https://github.com/edlopez000/merfluence/issues/175)) ([0ade406](https://github.com/edlopez000/merfluence/commit/0ade40658aa67d2872c332b59b99b80834782a3c))
+* wrap CJK labels that overflow fixed-width diagram boxes ([196b740](https://github.com/edlopez000/merfluence/commit/196b740d242e9ca16e7219b5e089b881939f2612))
+
 ## [1.5.0](https://github.com/edlopez000/merfluence/compare/v1.4.0...v1.5.0) (2026-08-13)
 
 
