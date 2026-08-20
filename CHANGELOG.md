@@ -9,6 +9,13 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.6.1](https://github.com/edlopez000/merfluence/compare/v1.6.0...v1.6.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* inherit the Forge secrets into the release deploy ([#177](https://github.com/edlopez000/merfluence/issues/177)) ([798770e](https://github.com/edlopez000/merfluence/commit/798770e6bb44b027fd5403e224029ae0389b8248))
+
 ## [1.6.0](https://github.com/edlopez000/merfluence/compare/v1.5.0...v1.6.0) (2026-08-20)
 
 
