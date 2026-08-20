@@ -25,30 +25,19 @@ on:
       tag:
         required: true
         type: string
-    # Declared, not passed. This block is load-bearing and its absence is what
-    # broke the v1.5.0 deploy: inside a workflow_call-invoked workflow the
-    # `secrets` context is CLOSED, so `secrets.FORGE_EMAIL` for a name that
-    # appears in neither this block nor a caller's `secrets:` resolves to the
-    # empty string — silently. Every step below still ran; forge just reported
-    # "Not logged in", and the snapshot step reported it first.
+    # No `secrets:` block here, deliberately. Inside a workflow_call-invoked
+    # workflow the `secrets` context is CLOSED; the caller's `secrets: inherit`
+    # (release-please.yml) is what opens it, and the `environment: production` on
+    # the deploy job below is what supplies the values — the environment's copy
+    # winning over anything the caller passed. Neither half works alone.
     #
-    # `required: false` because release-please.yml cannot pass these and must not
-    # try. They live on the production ENVIRONMENT, and on.workflow_call has no
-    # `environment` keyword, so a caller has no way to read them — the calling job
-    # declares no environment and there are no repository-level copies. Declaring
-    # them here is what opens the context; the `environment: production` on the
-    # deploy job below is what fills it, and the environment's value wins over
-    # anything a caller could have supplied.
-    #
-    # The distinction that cost a release: `environment:` on the job governs the
-    # approval gate AND the secret values, but not whether the NAME resolves at
-    # all. The gate fired correctly on v1.5.0 while the values came through empty,
-    # which is exactly the shape of that split.
-    secrets:
-      FORGE_EMAIL:
-        required: false
-      FORGE_API_TOKEN:
-        required: false
+    # Declaring the names here is not merely redundant, it is the mistake that
+    # cost v1.6.0. The theory was that naming FORGE_EMAIL/FORGE_API_TOKEN as
+    # `required: false` opens the context. It does not: unpassed, they resolved to
+    # the empty string, the approval gate fired anyway, every step still ran, and
+    # `forge deploy` reported "Not logged in" — the same failure as v1.5.0, whose
+    # cause was the missing `inherit` all along. The preflight step on the deploy
+    # job now names that state in two seconds rather than leaving it to the CLI.
   # Manual deploy of any tag — the rollback path. It keeps everything the
   # release path has (the gates below, the required-reviewer pause, the
   # forge-deploy concurrency group, verify-deploy), which the local
@@ -171,6 +160,22 @@ jobs:
       group: forge-deploy
       cancel-in-progress: false
     steps:
+      # FIRST, before checkout: this job's credentials have arrived empty twice
+      # (v1.5.0, v1.6.0), and both times the symptom was a Forge auth error
+      # minutes later — after a checkout, an npm ci, a build, and a human
+      # approval. Empty here means the secrets never reached the job, which is a
+      # wiring bug in the two lines named below, NOT a bad or expired token.
+      # Cheap enough to run on every deploy; the whole point is that it costs
+      # two seconds and says the true thing.
+      - name: Preflight — Forge credentials present
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: |
+          if [ -z "$FORGE_EMAIL" ] || [ -z "$FORGE_API_TOKEN" ]; then
+            echo "::error::FORGE_EMAIL/FORGE_API_TOKEN are empty. Both exist on the production environment, so they did not reach this job. Check that the caller passes 'secrets: inherit' (release-please.yml) and that this job still declares 'environment: production' — both are required."
+            exit 1
+          fi
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ inputs.tag }}
