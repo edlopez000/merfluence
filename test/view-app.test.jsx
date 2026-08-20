@@ -560,6 +560,144 @@ describe('toolbar: export menu', () => {
   });
 });
 
+// --- The macro iframe is only as tall as its diagram -------------------------
+// Nothing in our CSS clips the export menu; the host iframe's own bottom edge
+// does, and a browser does not paint past it. On a short diagram the menu used
+// to open with three of its four items outside the frame and unreachable. The
+// arithmetic lives in src/lib/menu-placement.ts and is unit-tested there against
+// real pixel sizes; what is asserted here is the wiring jsdom can see — that the
+// measured offset reaches the menu, and that space borrowed from the document is
+// always given back.
+describe('toolbar: export menu inside a short iframe', () => {
+  const MENU_HEIGHT = 120;
+  const ANCHOR = { top: 6, height: 28 };
+  let restore = [];
+
+  /** Give jsdom, which lays nothing out, the geometry of a real macro. */
+  function fakeLayout(viewportHeight) {
+    const rect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this.classList?.contains('export')) {
+        return { ...ANCHOR, bottom: ANCHOR.top + ANCHOR.height, left: 0, right: 0, width: 0 };
+      }
+      return rect.call(this);
+    };
+    const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get() {
+        return this.classList?.contains('export-menu') ? MENU_HEIGHT : 0;
+      },
+    });
+    const client = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(document.documentElement),
+      'clientHeight',
+    );
+    Object.defineProperty(document.documentElement, 'clientHeight', {
+      configurable: true,
+      value: viewportHeight,
+    });
+    restore.push(() => {
+      Element.prototype.getBoundingClientRect = rect;
+      if (offset) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offset);
+      else delete HTMLElement.prototype.offsetHeight;
+      delete document.documentElement.clientHeight;
+      if (client) Object.defineProperty(document.documentElement, 'clientHeight', client);
+    });
+  }
+
+  afterEach(() => {
+    for (const undo of restore.splice(0)) undo();
+    document.body.style.paddingBottom = '';
+  });
+
+  const menuTop = () => root().querySelector('.export-menu').style.top;
+
+  it('leaves the placement and the document alone when the menu fits below', async () => {
+    fakeLayout(600);
+    await mountReady();
+    h.resize.mockClear();
+
+    fireEvent.click(btnByText(/^export/i));
+
+    // 4px under a 28px trigger — the stylesheet's own offset, expressed inline.
+    expect(menuTop()).toBe('32px');
+    expect(document.body.style.paddingBottom).toBe('');
+    expect(h.resize).not.toHaveBeenCalled();
+  });
+
+  it('slides the menu up rather than off the bottom edge, without touching the document', async () => {
+    fakeLayout(150);
+    await mountReady();
+    h.resize.mockClear();
+
+    fireEvent.click(btnByText(/^export/i));
+
+    // Raised so its bottom clears the iframe edge: 150 - 4 - 120 - anchor top.
+    expect(menuTop()).toBe('20px');
+    // Sliding it up costs nothing, so the page below never moves.
+    expect(document.body.style.paddingBottom).toBe('');
+    expect(h.resize).not.toHaveBeenCalled();
+  });
+
+  it('holds the macro open when the iframe is shorter than the menu, and asks the host to resize', async () => {
+    fakeLayout(100);
+    await mountReady();
+    h.resize.mockClear();
+
+    fireEvent.click(btnByText(/^export/i));
+
+    // 6 + 28 + 4 + 120 + 4 - 100 — the shortfall, as document height.
+    expect(document.body.style.paddingBottom).toBe('62px');
+    expect(h.resize).toHaveBeenCalled();
+  });
+
+  it('hands the reserved space back on every way out of the menu', async () => {
+    fakeLayout(100);
+    await mountReady();
+
+    // Escape.
+    fireEvent.click(btnByText(/^export/i));
+    expect(document.body.style.paddingBottom).toBe('62px');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.body.style.paddingBottom).toBe('');
+
+    // A click outside.
+    fireEvent.click(btnByText(/^export/i));
+    expect(document.body.style.paddingBottom).toBe('62px');
+    fireEvent.pointerDown(document.body);
+    expect(document.body.style.paddingBottom).toBe('');
+
+    // An item that acts and closes.
+    fireEvent.click(btnByText(/^export/i));
+    expect(document.body.style.paddingBottom).toBe('62px');
+    fireEvent.click(btnByText(/^svg$/i));
+    expect(document.body.style.paddingBottom).toBe('');
+  });
+
+  it('does not oscillate when the host grows the iframe it just asked to grow', async () => {
+    fakeLayout(100);
+    await mountReady();
+
+    fireEvent.click(btnByText(/^export/i));
+    expect(document.body.style.paddingBottom).toBe('62px');
+
+    // The host obliges: the iframe is now tall enough, and fires a resize.
+    Object.defineProperty(document.documentElement, 'clientHeight', {
+      configurable: true,
+      value: 162,
+    });
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    // The re-measure now finds room — but the room IS the reservation, so
+    // handing it back would shrink the iframe to the height that did not fit.
+    expect(document.body.style.paddingBottom).toBe('62px');
+    expect(menuTop()).toBe('32px');
+  });
+});
+
 // --- Transparent is not always the export you want ---------------------------
 // Mermaid paints no backdrop, so the PNG was transparent and nothing said so.
 // That composites beautifully onto a coloured slide and disappears when pasted

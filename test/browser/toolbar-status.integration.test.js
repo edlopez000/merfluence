@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import viewHtml from '../../src/view/index.html?raw';
+import { placeMenu } from '../../src/lib/menu-placement.js';
 
 /**
  * Why the export's "Exporting…" chip is a `.status` element rather than markup
@@ -177,5 +178,65 @@ describe('the export menu at its real label widths', () => {
     // One line of text plus the separator's own padding, and nothing more.
     const textHeight = svg.getBoundingClientRect().height;
     expect(option.getBoundingClientRect().height).toBeLessThan(textHeight * 2);
+  });
+
+  /**
+   * The vertical counterpart to the three width assertions above, and the reason
+   * placeMenu exists: the macro's iframe is only as tall as its diagram, and it —
+   * not any rule of ours — is what clips this popup. A short flowchart shipped a
+   * menu with three of its four items outside the frame, unpainted.
+   *
+   * The viewport here is the test runner's, which is nothing like a macro's, so
+   * the iframe height is supplied rather than measured. Everything else is real:
+   * the menu's height is what the shipped stylesheet gives its shipped labels,
+   * which is the number the arithmetic in test/menu-placement.test.js has to
+   * assume and this test confirms.
+   */
+  it('is placed inside a macro iframe too short to hang it below the toolbar', async () => {
+    const menu = mountMenu('600px');
+    await settle();
+
+    const anchor = menu.parentElement; // .export
+    const menuHeight = menu.offsetHeight;
+    // If this is ever false the fixture has drifted from the shipped menu and
+    // the placement below is being asserted against nothing.
+    expect(menuHeight).toBeGreaterThan(80);
+
+    // A macro whose iframe has room for the menu, but not below the toolbar.
+    const tight = menuHeight + 24;
+    const raised = placeMenu({
+      anchorTop: 6,
+      anchorHeight: anchor.offsetHeight,
+      menuHeight,
+      viewportHeight: tight,
+    });
+    expect(raised.reserve).toBe(0);
+    menu.style.top = `${raised.top}px`;
+    await settle();
+    // Measured against the anchor, since the real anchor is at viewport y=6 and
+    // this fixture is wherever the test page put it.
+    const offset = 6 - anchor.getBoundingClientRect().top;
+    const bottom = menu.getBoundingClientRect().bottom + offset;
+    expect(bottom).toBeLessThanOrEqual(tight);
+    expect(menu.getBoundingClientRect().top + offset).toBeGreaterThanOrEqual(0);
+
+    // And a macro shorter than the menu itself, where no offset can help.
+    const short = Math.round(menuHeight / 2);
+    const reserved = placeMenu({
+      anchorTop: 6,
+      anchorHeight: anchor.offsetHeight,
+      menuHeight,
+      viewportHeight: short,
+    });
+    expect(reserved.reserve).toBeGreaterThan(0);
+    // The reservation has to be enough on its own — a second pass that asked for
+    // more would mean the iframe grew, shrank and grew again.
+    const after = placeMenu({
+      anchorTop: 6,
+      anchorHeight: anchor.offsetHeight,
+      menuHeight,
+      viewportHeight: short + reserved.reserve,
+    });
+    expect(after.reserve).toBe(0);
   });
 });

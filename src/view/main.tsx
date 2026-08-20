@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
@@ -15,6 +15,8 @@ import {
 } from '../lib/host.js';
 import { pickCachedSvg, pickCachedVersion } from '../lib/cache.js';
 import { normalizeHeight } from '../lib/sizing.js';
+import { placeMenu } from '../lib/menu-placement.js';
+import type { MenuPlacement } from '../lib/menu-placement.js';
 import { copyPngToClipboard, exportPng, exportSvg } from '../lib/png-export.js';
 import { exportFilename } from '../lib/export-name.js';
 import { Stage } from '../components/Stage.jsx';
@@ -66,6 +68,61 @@ function ViewActions({
   // being pasted is the reader's business, not a property of the page.
   const [transparent, setTransparent] = useState(false);
   const exportRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  // Where the open menu ended up once measured against the iframe, or null
+  // before the measurement (and whenever the menu is shut), which leaves the
+  // stylesheet's own "below the trigger" offset in force.
+  const [placement, setPlacement] = useState<MenuPlacement | null>(null);
+  // How much document height we are currently holding open for the menu. A ref,
+  // not state, because it is applied to the document rather than rendered — and
+  // because the measure loop below has to read the value it last wrote.
+  const reservedRef = useRef(0);
+
+  // Keep the open menu inside the macro's iframe. The toolbar sits at the top of
+  // an iframe only as tall as its diagram, so on a short diagram a menu that
+  // drops straight down falls past the iframe's edge and is simply not painted —
+  // see placeMenu for the two ways out of that.
+  useLayoutEffect(() => {
+    if (!exportOpen) {
+      setPlacement(null);
+      return;
+    }
+    const measure = () => {
+      const anchor = exportRef.current;
+      const menu = menuRef.current;
+      if (!anchor || !menu) return;
+      const box = anchor.getBoundingClientRect();
+      const next = placeMenu({
+        anchorTop: box.top,
+        anchorHeight: box.height,
+        menuHeight: menu.offsetHeight,
+        viewportHeight: document.documentElement.clientHeight,
+      });
+      setPlacement(next);
+
+      // The reservation only ever grows while the menu is open. Letting it fall
+      // back to zero would oscillate: the space is what made the menu fit, so
+      // the re-measure that follows the iframe growing always reports that no
+      // space is needed — hand it back and the iframe shrinks to exactly the
+      // height that did not fit, forever.
+      if (next.reserve <= reservedRef.current) return;
+      reservedRef.current = next.reserve;
+      // Padding on the body, because document height is what an auto-sizing
+      // host measures. resize() is for the hosts that want telling as well.
+      document.body.style.paddingBottom = `${next.reserve}px`;
+      resize();
+    };
+    measure();
+    // The iframe grows a beat after the reservation lands, and the resize it
+    // fires inside this frame is the cue to place the menu against the room it
+    // now actually has.
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      reservedRef.current = 0;
+      document.body.style.paddingBottom = '';
+    };
+  }, [exportOpen]);
 
   // Close the export menu on an outside click or Escape, the two things a user
   // expects to dismiss a popup.
@@ -189,7 +246,12 @@ function ViewActions({
           Export <span aria-hidden="true">▾</span>
         </button>
         {exportOpen && (
-          <div className="export-menu" role="menu">
+          <div
+            className="export-menu"
+            role="menu"
+            ref={menuRef}
+            style={placement ? { top: placement.top } : undefined}
+          >
             {/* Copy before download, because pasting is the shorter route to
                 everywhere these images go — a Slack message, a slide — and a
                 download only to re-upload is the trip copying removes.
