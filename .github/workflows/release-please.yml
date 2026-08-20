@@ -114,23 +114,29 @@ jobs:
   # is the same gate the sbom job uses; it is non-empty only on the push that
   # merges the release PR.
   #
-  # Still no `secrets:` and no `secrets: inherit` here, but NOT for the reason
-  # this comment used to give. It claimed the called workflow's `environment:`
-  # made any forwarding a no-op; that was half right, and the half it got wrong
-  # cost the v1.5.0 deploy, which asked for approval and then failed "Not logged
-  # in" with empty credentials.
+  # `secrets: inherit` is load-bearing, and two releases shipped nothing for want
+  # of it. Inside a workflow_call-invoked workflow the `secrets` context is
+  # CLOSED: every `secrets.FORGE_*` reference over there resolves to the empty
+  # string unless the caller opens the context. `inherit` is what opens it.
   #
-  # What is actually true: this job genuinely cannot forward them. FORGE_EMAIL and
-  # FORGE_API_TOKEN exist only on the production environment, this job declares no
-  # environment, and on.workflow_call has no `environment` keyword — so there is
-  # nothing here to inherit, and `secrets: inherit` really would be an empty
-  # gesture. The part that was missing is on the other side: the called workflow
-  # has to DECLARE those names under on.workflow_call.secrets before a reference
-  # to them resolves at all. See the block in deploy-production.yml.
+  # It is not this job that supplies the values — it cannot. FORGE_EMAIL and
+  # FORGE_API_TOKEN live only on the production environment, this job declares no
+  # environment, and on.workflow_call has no `environment` keyword. The values
+  # come from the `environment: production` on the called workflow's deploy job,
+  # and take precedence over anything a caller could pass. Two halves, both
+  # required: `inherit` here opens the context, `environment:` there fills it.
+  #
+  # Read that against what the two failures looked like. v1.5.0: no `inherit`,
+  # nothing declared — empty. v1.6.0: still no `inherit`, but the names declared
+  # under on.workflow_call.secrets on the theory that declaring opens the context
+  # — empty again, because it does not. Both runs passed their gates, took a
+  # human approval, and only then reported "Not logged in" from the Forge CLI.
+  # `inherit` is the line that was missing both times.
   production:
     name: Deploy the release to production
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     uses: ./.github/workflows/deploy-production.yml
+    secrets: inherit
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
