@@ -83,7 +83,7 @@ jobs:
       #
       # ref: the tag, not the branch head — the same reason release-please.yml's
       # sbom job checks out the tag. We must gate the bytes we are about to ship.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.tag }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -176,7 +176,7 @@ jobs:
             echo "::error::FORGE_EMAIL/FORGE_API_TOKEN are empty. Both exist on the production environment, so they did not reach this job. Check that the caller passes 'secrets: inherit' (release-please.yml) and that this job still declares 'environment: production' — both are required."
             exit 1
           fi
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.tag }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
