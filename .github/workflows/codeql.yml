@@ -54,7 +54,7 @@ jobs:
       # SHA-pinned like every action in this repo (see ci.yml): a tag
       # is mutable, and these run in a repo that also holds deploy credentials.
       # Renovate bumps the pins using the trailing version comment.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Initialize CodeQL
         uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:

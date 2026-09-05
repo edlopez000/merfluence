@@ -43,7 +43,7 @@ jobs:
       # SHA-pinned: these jobs sit next to ones holding deploy credentials, and
       # a tag is mutable — v4 can be repointed at any commit by anyone who can
       # push a tag. Renovate bumps these using the trailing version comment.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
@@ -121,7 +121,7 @@ jobs:
       group: coverage-badge
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # download-artifact and upload-artifact version independently; this is the
       # current download major. SHA-pinned like every action here.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -162,7 +162,7 @@ jobs:
     steps:
       # SHA-pinned for the same reason as every other action in this file: a tag
       # is mutable. Renovate bumps these using the trailing version comment.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
@@ -199,7 +199,7 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
@@ -249,7 +249,7 @@ jobs:
     steps:
       # SHA-pinned like every action in this file: a tag is mutable. Renovate
       # bumps these using the trailing version comment.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # Pinned to 22.22.3 for lockfile-cache parity with the other jobs, not
@@ -284,7 +284,7 @@ jobs:
     steps:
       # dorny diffs a push against github.event.before, so it needs the base
       # commit checked out (a PR would not). Same SHA pin as everywhere else.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # Two allow-lists, because the shipping surface has two kinds of entry.
       #
       #   code — files that ARE the bundle. Any change here ships, full stop. This
@@ -390,7 +390,7 @@ jobs:
       group: forge-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           # Pinned to 22.22.3 -- the last 22.x before the node-fetch keep-alive
