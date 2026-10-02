@@ -48,7 +48,7 @@
     "@forge/bridge": "^4.0.0",
     "@lezer/highlight": "^1.2.3",
     "dompurify": "^3.2.3",
-    "mermaid": "^11.4.1",
+    "mermaid": "^12.0.0",
     "mermaid-10": "npm:mermaid@^10.9.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
