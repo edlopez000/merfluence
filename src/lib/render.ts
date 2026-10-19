@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 import { ensureAccessibleName } from './a11y-name.js';
 import { centerMindmapLabels } from './mindmap-labels.js';
-import { ENGINE, loadMermaid, resolveMajor } from './mermaid-registry.js';
+import { isPele, loadMermaid, resolveMajor } from './mermaid-registry.js';
 import { wrapCjkLabels } from './cjk-wrap.js';
 
 /**
@@ -347,7 +347,7 @@ function initializeOnce(
 export function describeError(err: any) {
   const message = String(err?.message ?? err ?? 'Unknown error').trim();
 
-  // PeleError (experimental engine) carries a 1-based line directly.
+  // PeleError (the opt-in Pele renderer) carries a 1-based line directly.
   if (err?.name === 'PeleError' || err?.code === 'syntax') {
     if (Number.isInteger(err?.line) && err.line > 0) return { line: err.line, message };
   }
@@ -383,7 +383,7 @@ function enforceSourceLimit(source: string) {
 /** Throws on invalid syntax. Cheap enough to run on every keystroke. */
 export async function validate(source: string, versionPref = 'auto') {
   enforceSourceLimit(source);
-  if (ENGINE === 'pele') {
+  if (isPele(versionPref)) {
     const { validateWithPele } = await import('./pele-engine.js');
     return validateWithPele(source);
   }
@@ -412,7 +412,7 @@ export async function renderDiagram({
   // text, and draws mindmap labels centred, so none of the Mermaid workarounds
   // below apply. Naming and sanitizing do: the latter is not optional for any
   // engine.
-  if (ENGINE === 'pele') {
+  if (isPele(versionPref)) {
     const { renderWithPele } = await import('./pele-engine.js');
     const svg = await renderWithPele(trimmed, theme);
     return { svg: sanitizeSvg(ensureAccessibleName(svg)), major: 'pele' };

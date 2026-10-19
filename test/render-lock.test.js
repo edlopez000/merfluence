@@ -20,7 +20,7 @@ const fake = vi.hoisted(() => ({
 }));
 
 vi.mock('../src/lib/mermaid-registry.js', () => ({
-  ENGINE: 'mermaid',
+  isPele: (pref) => pref === 'pele',
   loadMermaid: vi.fn(async () => fake),
   resolveMajor: vi.fn((pref) => (pref === '10' ? '10' : '11')),
 }));

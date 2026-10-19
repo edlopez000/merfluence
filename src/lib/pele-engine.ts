@@ -4,9 +4,10 @@
  * Pele (github.com/obsidianmd/pele) is an independent re-implementation of the
  * Mermaid grammar with its own layout and visual style: synchronous, no runtime
  * dependencies, and a few KB of SVG per diagram where Mermaid emits a 10-20KB
- * theme stylesheet with every render. It is selected at *build* time
- * (MERFLUENCE_ENGINE=pele, see vite.view.config.js), never per diagram, so the
- * macro config schema is untouched and a stock build still ships Mermaid only.
+ * theme stylesheet with every render. A diagram opts in per macro, through the
+ * version dropdown (mermaidVersion: 'pele', see mermaid-registry.ts); every
+ * other diagram renders with Mermaid, and this module plus Pele's chunks are
+ * fetched only when an opted-in diagram renders.
  *
  * Everything that reaches the DOM still goes through render.ts's sanitizeSvg —
  * the DOMPurify SVG profile plus the egress hook. Pele's own escaping and URL

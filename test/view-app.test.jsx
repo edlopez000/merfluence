@@ -46,10 +46,10 @@ vi.mock('../src/lib/render.js', async (importActual) => {
 // Partial mock: loadMermaid would dynamically import the real ~850KB module,
 // which the speculative-warm-up assertions only need to observe, not perform.
 // resolvedVersion stays real — the version-label tests assert against it.
-const r = vi.hoisted(() => ({ loadMermaid: vi.fn() }));
+const r = vi.hoisted(() => ({ loadMermaid: vi.fn(), loadPele: vi.fn() }));
 vi.mock('../src/lib/mermaid-registry.js', async (importActual) => {
   const actual = await importActual();
-  return { ...actual, loadMermaid: r.loadMermaid };
+  return { ...actual, loadMermaid: r.loadMermaid, loadPele: r.loadPele };
 });
 
 // The Toolbar's export buttons call into png-export, which draws to a canvas —
@@ -104,6 +104,7 @@ beforeEach(() => {
   p.exportPng.mockReset().mockImplementation(() => Promise.resolve());
   p.copyPngToClipboard.mockReset().mockImplementation(() => Promise.resolve());
   r.loadMermaid.mockReset().mockResolvedValue({});
+  r.loadPele.mockReset().mockResolvedValue({});
   ioInstances = [];
   roInstances = [];
   globalThis.ResizeObserver = class {
@@ -403,6 +404,34 @@ describe('speculative Mermaid warm-up', () => {
 
     expect(r.loadMermaid).not.toHaveBeenCalled();
     expect(h.renderDiagram).not.toHaveBeenCalled();
+  });
+
+  it('warms Pele instead, and never Mermaid, for a diagram opted into Pele', async () => {
+    h.getConfig.mockResolvedValue({
+      source: 'flowchart TD\n A-->B',
+      theme: 'light',
+      mermaidVersion: 'pele',
+    });
+    await mountView();
+
+    expect(r.loadPele).toHaveBeenCalledTimes(1);
+    expect(r.loadMermaid).not.toHaveBeenCalled();
+  });
+});
+
+describe('Pele version label', () => {
+  it('names Pele rather than prefixing it with Mermaid', async () => {
+    h.getConfig.mockResolvedValue({
+      source: 'flowchart TD\n A-->B',
+      theme: 'light',
+      mermaidVersion: 'pele',
+      cacheV: CACHE_VERSION,
+      svgLight: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+      renderedVersion: resolvedVersion('pele'),
+    });
+    await mountView();
+
+    expect(root().querySelector('.meta').textContent).toBe(resolvedVersion('pele'));
   });
 });
 

@@ -51,7 +51,7 @@ describe('resolvedVersion', () => {
 
 describe('VERSION_OPTIONS', () => {
   it('offers auto plus both pinned majors, in order', () => {
-    expect(VERSION_OPTIONS.map((o) => o.value)).toEqual(['auto', '11', '10']);
+    expect(VERSION_OPTIONS.map((o) => o.value)).toEqual(['auto', '11', '10', 'pele']);
     // Labels surface the resolved version so the dropdown is self-documenting.
     expect(VERSION_OPTIONS[0].label).toContain(resolvedVersion('auto'));
   });

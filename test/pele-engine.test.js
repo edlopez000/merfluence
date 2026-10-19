@@ -3,11 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderWithPele, validateWithPele } from '../src/lib/pele-engine.js';
-import { describeError, sanitizeSvg } from '../src/lib/render.js';
-import { pickCachedSvg, CACHE_VERSION } from '../src/lib/cache.js';
+import { describeError, renderDiagram, sanitizeSvg, validate } from '../src/lib/render.js';
+import { VERSION_OPTIONS, isPele, resolvedVersion } from '../src/lib/mermaid-registry.js';
 
 /**
- * The experimental Pele engine (MERFLUENCE_ENGINE=pele). Unlike Mermaid, Pele
+ * The opt-in Pele renderer (mermaidVersion: 'pele'). Unlike Mermaid, Pele
  * lays out without getBBox — it falls back to built-in font metrics where there
  * is no canvas — so the whole corpus can render here in jsdom, not just parse.
  */
@@ -59,14 +59,28 @@ describe('pele errors', () => {
   });
 });
 
-describe('cache is engine-scoped', () => {
-  // The unit project builds with the default engine (mermaid), so a cache a
-  // Pele build wrote must read as a miss — and a Mermaid one as a hit.
-  const base = { cacheV: CACHE_VERSION, svgLight: '<svg/>' };
-  it('ignores a cache rendered by pele in a mermaid build', () => {
-    expect(pickCachedSvg({ ...base, renderedVersion: 'pele 1.6.0' }, 'light')).toBeNull();
+describe('per-diagram opt-in', () => {
+  it('is offered in the version dropdown and labelled as Pele', () => {
+    expect(VERSION_OPTIONS.map((o) => o.value)).toContain('pele');
+    expect(resolvedVersion('pele')).toMatch(/^Pele \d+\.\d+\.\d+$/);
+    expect(isPele('pele')).toBe(true);
+    expect(isPele('auto')).toBe(false);
   });
-  it('serves a cache rendered by mermaid', () => {
-    expect(pickCachedSvg({ ...base, renderedVersion: '11.4.1' }, 'light')).toBe('<svg/>');
+
+  it('routes renderDiagram through Pele, still sanitized', async () => {
+    const { svg, major } = await renderDiagram({
+      source: 'flowchart LR\n A["<img src=x onerror=alert(1)>"]-->B',
+      versionPref: 'pele',
+      theme: 'dark',
+    });
+    expect(major).toBe('pele');
+    expect(svg).toMatch(/class="pele pele-flowchart"/);
+    expect(svg).toMatch(/--pele-bg:#22272b/);
+    expect(svg).not.toMatch(/<img|onerror=/i);
+  });
+
+  it('routes validate through Pele', async () => {
+    await expect(validate('flowchart LR\n A-->B', 'pele')).resolves.toBeUndefined();
+    await expect(validate('flowchart LR\n A-->>>B', 'pele')).rejects.toThrow(/Parse error/);
   });
 });

@@ -1,5 +1,3 @@
-import { ENGINE } from './mermaid-registry.js';
-
 /**
  * Cached-SVG shape stored in macro config.
  *
@@ -32,18 +30,6 @@ import { ENGINE } from './mermaid-registry.js';
  * showing the right one.
  */
 export const CACHE_VERSION = 3;
-
-/**
- * EXPERIMENTAL engine split: a Pele build must not paint SVG a Mermaid build
- * cached (or vice versa), or switching engines would show no difference on any
- * saved diagram. resolvedVersion() prefixes Pele renders with "pele ", so the
- * stored renderedVersion says which engine drew the cache.
- */
-function cacheMatchesEngine(config: { renderedVersion?: unknown }) {
-  const byPele =
-    typeof config.renderedVersion === 'string' && config.renderedVersion.startsWith('pele ');
-  return byPele === (ENGINE === 'pele');
-}
 
 // Per-string budget. The SVG is persisted verbatim into the page document, so
 // the cost that matters is raw UTF-8 bytes, not the gzipped transfer size.
@@ -115,14 +101,10 @@ export function buildCacheFields(
  * written by a different CACHE_VERSION is treated as absent.
  */
 export function pickCachedSvg(
-  config:
-    | { cacheV?: number; svgLight?: unknown; svgDark?: unknown; renderedVersion?: unknown }
-    | null
-    | undefined,
+  config: { cacheV?: number; svgLight?: unknown; svgDark?: unknown } | null | undefined,
   theme: string,
 ) {
   if (!config || config.cacheV !== CACHE_VERSION) return null;
-  if (!cacheMatchesEngine(config)) return null;
   const svg = theme === 'dark' ? config.svgDark : config.svgLight;
   return typeof svg === 'string' && svg.length > 0 ? svg : null;
 }

@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { ensureAccessibleName } from '../lib/a11y-name.js';
 import { centerMindmapLabels } from '../lib/mindmap-labels.js';
-import { ENGINE, loadMermaid, resolvedVersion, warmRenderer } from '../lib/mermaid-registry.js';
+import { isPele, loadMermaid, loadPele, resolvedVersion } from '../lib/mermaid-registry.js';
 import {
   enableTheme,
   getConfig,
@@ -446,8 +446,8 @@ function App() {
   // — and costs nothing on the cache-hit path, which never enters 'deferred'.
   useEffect(() => {
     if (state.status !== 'deferred' || !config) return;
-    // The experimental Pele build warms Pele instead (see pele-engine.ts).
-    (ENGINE === 'pele' ? warmRenderer : loadMermaid)(config.mermaidVersion).catch(() => {
+    // A diagram opted into Pele warms Pele instead, and never fetches Mermaid.
+    (isPele(config.mermaidVersion) ? loadPele() : loadMermaid(config.mermaidVersion)).catch(() => {
       // A fetch failure surfaces from the real render below, with an error
       // state to land in; here it would just be an unhandled rejection.
     });
@@ -586,7 +586,10 @@ function App() {
           />
         )}
       />
-      <div className="meta">Mermaid {state.version}</div>
+      {/* resolvedVersion names Pele itself; a bare semver is Mermaid's. */}
+      <div className="meta">
+        {state.version.startsWith('Pele ') ? state.version : `Mermaid ${state.version}`}
+      </div>
     </div>
   );
 }

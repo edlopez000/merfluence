@@ -35,11 +35,17 @@ const RESOLVED: Record<string, string> = {
 };
 
 /**
- * Which library renders, fixed at build time (MERFLUENCE_ENGINE, see
- * vite.view.config.js). 'pele' is an experiment; it bypasses the per-major
- * loaders below but leaves them, and the pinned versions, untouched.
+ * The version preference that opts a diagram into Pele, an experimental
+ * alternative renderer (see pele-engine.ts). It rides in the same config field
+ * as the Mermaid pins rather than a field of its own, so an older bundle that
+ * doesn't know it falls through resolveMajor() to the default major and renders
+ * the diagram with Mermaid instead of failing.
  */
-export const ENGINE: 'mermaid' | 'pele' = __RENDER_ENGINE__ === 'pele' ? 'pele' : 'mermaid';
+export const PELE = 'pele';
+
+export function isPele(pref?: string) {
+  return pref === PELE;
+}
 
 const cache = new Map();
 
@@ -48,6 +54,7 @@ export const VERSION_OPTIONS = [
   { value: 'auto', label: `Auto (currently ${RESOLVED[DEFAULT_MAJOR]})` },
   { value: '11', label: `Pinned to ${RESOLVED[11]}` },
   { value: '10', label: `Pinned to ${RESOLVED[10]}` },
+  { value: PELE, label: `Pele ${__PELE_VERSION__} (experimental)` },
 ];
 
 export function resolveMajor(pref?: string) {
@@ -55,18 +62,19 @@ export function resolveMajor(pref?: string) {
   return DEFAULT_MAJOR;
 }
 
-/** The exact semver that will do the rendering, for display. */
+/**
+ * The exact version that will do the rendering, for display. A bare semver means
+ * Mermaid; Pele is named, so the reader's label (and the renderedVersion a cache
+ * stores) says which library drew the diagram.
+ */
 export function resolvedVersion(pref?: string) {
-  // Prefixed so a Pele render can never be mistaken for a Mermaid semver — the
-  // cache uses this to keep the two engines' stored SVGs apart.
-  if (ENGINE === 'pele') return `pele ${__PELE_VERSION__}`;
+  if (isPele(pref)) return `Pele ${__PELE_VERSION__}`;
   return RESOLVED[resolveMajor(pref)];
 }
 
-/** Start fetching whichever renderer this build uses, without rendering. */
-export function warmRenderer(pref = 'auto'): Promise<unknown> {
-  if (ENGINE === 'pele') return import('./pele-engine.js').then((m) => m.loadPele());
-  return loadMermaid(pref);
+/** Start fetching Pele without rendering — the counterpart to loadMermaid. */
+export function loadPele(): Promise<unknown> {
+  return import('./pele-engine.js').then((m) => m.loadPele());
 }
 
 export async function loadMermaid(pref = 'auto') {

@@ -148,22 +148,31 @@ const MALICIOUS_SOURCES = {
   Note over A: <img src=x onerror=window.__pwn()>`,
 };
 
-describe('malicious diagram source stays inert end-to-end', () => {
-  for (const [name, source] of Object.entries(MALICIOUS_SOURCES)) {
-    it(name, async () => {
-      // A payload that fails to parse is trivially safe but tests nothing about
-      // the render/sanitize path, so require these to actually render.
-      const { svg } = await renderDiagram({ source });
-      const host = injectAndProvoke(svg);
+// Every payload runs through both renderers a diagram can choose: Mermaid
+// (auto) and the per-diagram Pele opt-in. Pele has its own escaping, but the
+// guarantee under test is ours — the same sanitize pass — so it gets the same
+// proof rather than trust in the library.
+const ENGINE_PREFS = ['auto', 'pele'];
 
-      // Give any queued microtask/handler a turn to misbehave before asserting.
-      await Promise.resolve();
+describe.each(ENGINE_PREFS)(
+  'malicious diagram source stays inert end-to-end (%s)',
+  (versionPref) => {
+    for (const [name, source] of Object.entries(MALICIOUS_SOURCES)) {
+      it(name, async () => {
+        // A payload that fails to parse is trivially safe but tests nothing about
+        // the render/sanitize path, so require these to actually render.
+        const { svg } = await renderDiagram({ source, versionPref });
+        const host = injectAndProvoke(svg);
 
-      expect(window.__pwned, 'a payload executed').toBe(false);
-      assertInert(host);
-    });
-  }
-});
+        // Give any queued microtask/handler a turn to misbehave before asserting.
+        await Promise.resolve();
+
+        expect(window.__pwned, 'a payload executed').toBe(false);
+        assertInert(host);
+      });
+    }
+  },
+);
 
 /**
  * The egress guard, driven from ordinary *diagram source* rather than from a
@@ -179,7 +188,7 @@ describe('malicious diagram source stays inert end-to-end', () => {
  * These are egress cases, not execution cases: nothing here tries to run code,
  * so they assert on assertNoExternalRefs rather than the __pwn tripwire.
  */
-describe('external refs in diagram source do not egress', () => {
+describe.each(ENGINE_PREFS)('external refs in diagram source do not egress (%s)', (versionPref) => {
   const THEME_CSS_SOURCES = {
     'themeCSS url() via init directive': `%%{init: {'themeCSS': '.node rect { background-image: url(https://evil.example/leak.png); }'}}%%
 flowchart TD
@@ -192,7 +201,7 @@ flowchart TD
 
   for (const [name, source] of Object.entries(THEME_CSS_SOURCES)) {
     it(name, async () => {
-      const { svg } = await renderDiagram({ source });
+      const { svg } = await renderDiagram({ source, versionPref });
       const host = injectAndProvoke(svg);
       await Promise.resolve();
 

@@ -1,12 +1,10 @@
 import { it } from 'vitest';
 import { commands } from 'vitest/browser';
-import { renderDiagram, sanitizeSvg } from '../../src/lib/render.js';
-import { ensureAccessibleName } from '../../src/lib/a11y-name.js';
-import { renderWithPele } from '../../src/lib/pele-engine.js';
+import { renderDiagram } from '../../src/lib/render.js';
 
 /**
- * Renders every parse-corpus fixture with Mermaid (the shipping pipeline, via
- * renderDiagram) and with Pele, both themes, and writes the sanitized SVG —
+ * Renders every parse-corpus fixture through the shipping renderDiagram
+ * pipeline twice — the default (Mermaid) and the per-diagram Pele opt-in — both themes, and writes the sanitized SVG —
  * exactly what a reader's DOM would receive — side by side, plus an index.html
  * and a stats.json. commands.writeFile resolves paths against the project root.
  */
@@ -38,14 +36,16 @@ it('renders the corpus through both engines', { timeout: 300_000 }, async () => 
   const stats = [];
   // Warm both engines first so the first fixture doesn't carry module load time.
   await timed(() => renderDiagram({ source: 'flowchart LR\n A-->B', theme: 'light' }));
-  await timed(() => renderWithPele('flowchart LR\n A-->B', 'light'));
+  await timed(() =>
+    renderDiagram({ source: 'flowchart LR\n A-->B', versionPref: 'pele', theme: 'light' }),
+  );
 
   for (const [name, source] of fixtures) {
     const row = { name };
     for (const theme of ['light', 'dark']) {
       const mermaid = await timed(async () => (await renderDiagram({ source, theme })).svg);
-      const pele = await timed(async () =>
-        sanitizeSvg(ensureAccessibleName(await renderWithPele(source.trim(), theme))),
+      const pele = await timed(
+        async () => (await renderDiagram({ source, versionPref: 'pele', theme })).svg,
       );
       for (const [engine, r] of [
         ['mermaid', mermaid],

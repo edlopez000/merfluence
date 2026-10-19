@@ -34,6 +34,12 @@
 // config budget is tightened rather than raised. Headroom absorbs ordinary
 // dependency churn while still failing hard on a folded-in engine (the smallest
 // deferred engine is far larger than the gap).
+// Re-measured 2026-10-19 with the per-diagram Pele opt-in (its option, the
+// isPele branches in render.ts; Pele itself is a deferred chunk, not counted):
+//   reader view          — 79.95 kB brotli   (budget 80 kB,  ~0% headroom)
+//   config editor        — 162.06 kB brotli  (budget 163 kB, ~0.6% headroom)
+// The config budget rises 1 kB for that code. The reader view still fits, with
+// almost no slack left.
 // Raising a limit should be a conscious edit here, with the new baseline noted.
 export default [
   {
@@ -44,6 +50,6 @@ export default [
   {
     name: 'config editor — initial load (entry + vendor)',
     path: ['static/config/dist/assets/entry-*.js', 'static/config/dist/assets/vendor-*.js'],
-    limit: '162 kB',
+    limit: '163 kB',
   },
 ];
