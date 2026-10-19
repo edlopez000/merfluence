@@ -7,3 +7,5 @@
 // them as readonly globals in eslint.config.js — must be told they exist.
 declare const __MERMAID_11_VERSION__: string;
 declare const __MERMAID_10_VERSION__: string;
+declare const __PELE_VERSION__: string;
+declare const __RENDER_ENGINE__: string;

@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 import { ensureAccessibleName } from './a11y-name.js';
 import { centerMindmapLabels } from './mindmap-labels.js';
-import { loadMermaid, resolveMajor } from './mermaid-registry.js';
+import { ENGINE, loadMermaid, resolveMajor } from './mermaid-registry.js';
 import { wrapCjkLabels } from './cjk-wrap.js';
 
 /**
@@ -347,6 +347,11 @@ function initializeOnce(
 export function describeError(err: any) {
   const message = String(err?.message ?? err ?? 'Unknown error').trim();
 
+  // PeleError (experimental engine) carries a 1-based line directly.
+  if (err?.name === 'PeleError' || err?.code === 'syntax') {
+    if (Number.isInteger(err?.line) && err.line > 0) return { line: err.line, message };
+  }
+
   const jisonLine = err?.hash?.loc?.first_line;
   if (Number.isInteger(jisonLine)) {
     return { line: jisonLine, message };
@@ -378,6 +383,10 @@ function enforceSourceLimit(source: string) {
 /** Throws on invalid syntax. Cheap enough to run on every keystroke. */
 export async function validate(source: string, versionPref = 'auto') {
   enforceSourceLimit(source);
+  if (ENGINE === 'pele') {
+    const { validateWithPele } = await import('./pele-engine.js');
+    return validateWithPele(source);
+  }
   await withMermaidLock(async () => {
     const mermaid = await loadMermaid(versionPref);
     initializeOnce(mermaid, resolveMajor(versionPref), { theme: 'default' });
@@ -398,6 +407,16 @@ export async function renderDiagram({
   const trimmed = (source ?? '').trim();
   if (!trimmed) throw new Error('Diagram is empty');
   enforceSourceLimit(trimmed);
+
+  // Pele is synchronous and stateless (no singleton to lock), measures its own
+  // text, and draws mindmap labels centred, so none of the Mermaid workarounds
+  // below apply. Naming and sanitizing do: the latter is not optional for any
+  // engine.
+  if (ENGINE === 'pele') {
+    const { renderWithPele } = await import('./pele-engine.js');
+    const svg = await renderWithPele(trimmed, theme);
+    return { svg: sanitizeSvg(ensureAccessibleName(svg)), major: 'pele' };
+  }
 
   // Inject line breaks into CJK labels Mermaid would otherwise draw outside their
   // box. Render-time only: the source persisted to macro config is never touched,

@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mermaid vs Pele</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; background: #fff; color: #172b4d; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  th { text-align: left; padding: 16px 4px 4px; border-bottom: 1px solid #ccc; }
+  th small { font-weight: normal; color: #626f86; margin-left: 8px; }
+  td { padding: 8px; vertical-align: top; }
+  td.dark { background: #1d2125; }
+  td.err { color: #ae2e24; }
+  img { max-width: 100%; max-height: 520px; }
+  thead th { position: sticky; top: 0; background: #fff; }
+</style>
+<h1>Mermaid vs Pele — sanitized SVG for every fixture</h1>
+<p>Left: Mermaid (shipping pipeline). Right: Pele. Rows alternate light / dark. Timings are single warm renders in headless Chromium.</p>
+<table><thead><tr><th>Mermaid</th><th>Pele</th></tr></thead><tbody>
+  <tr><th colspan="2">acc-labelled
+    <small>mermaid 21.1 ms · 14.6 KB —
+    pele 1.5 ms · 2.9 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/acc-labelled.light.svg" alt="mermaid acc-labelled"></td><td class="light"><img src="pele/acc-labelled.light.svg" alt="pele acc-labelled"></td></tr>
+  <tr><td class="dark"><img src="mermaid/acc-labelled.dark.svg" alt="mermaid acc-labelled"></td><td class="dark"><img src="pele/acc-labelled.dark.svg" alt="pele acc-labelled"></td></tr>
+  <tr><th colspan="2">architecture
+    <small>mermaid 229 ms · 12.8 KB —
+    pele 9.1 ms · 4.2 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/architecture.light.svg" alt="mermaid architecture"></td><td class="light"><img src="pele/architecture.light.svg" alt="pele architecture"></td></tr>
+  <tr><td class="dark"><img src="mermaid/architecture.dark.svg" alt="mermaid architecture"></td><td class="dark"><img src="pele/architecture.dark.svg" alt="pele architecture"></td></tr>
+  <tr><th colspan="2">block
+    <small>mermaid 33.7 ms · 12.5 KB —
+    pele 6.1 ms · 3.0 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/block.light.svg" alt="mermaid block"></td><td class="light"><img src="pele/block.light.svg" alt="pele block"></td></tr>
+  <tr><td class="dark"><img src="mermaid/block.dark.svg" alt="mermaid block"></td><td class="dark"><img src="pele/block.dark.svg" alt="pele block"></td></tr>
+  <tr><th colspan="2">c4
+    <small>mermaid 35.5 ms · 26.5 KB —
+    pele 11.5 ms · 4.1 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/c4.light.svg" alt="mermaid c4"></td><td class="light"><img src="pele/c4.light.svg" alt="pele c4"></td></tr>
+  <tr><td class="dark"><img src="mermaid/c4.dark.svg" alt="mermaid c4"></td><td class="dark"><img src="pele/c4.dark.svg" alt="pele c4"></td></tr>
+  <tr><th colspan="2">class
+    <small>mermaid 75.2 ms · 33.4 KB —
+    pele 11.8 ms · 5.5 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/class.light.svg" alt="mermaid class"></td><td class="light"><img src="pele/class.light.svg" alt="pele class"></td></tr>
+  <tr><td class="dark"><img src="mermaid/class.dark.svg" alt="mermaid class"></td><td class="dark"><img src="pele/class.dark.svg" alt="pele class"></td></tr>
+  <tr><th colspan="2">er
+    <small>mermaid 27.7 ms · 11.9 KB —
+    pele 7.1 ms · 4.0 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/er.light.svg" alt="mermaid er"></td><td class="light"><img src="pele/er.light.svg" alt="pele er"></td></tr>
+  <tr><td class="dark"><img src="mermaid/er.dark.svg" alt="mermaid er"></td><td class="dark"><img src="pele/er.dark.svg" alt="pele er"></td></tr>
+  <tr><th colspan="2">flowchart
+    <small>mermaid 23.5 ms · 17.6 KB —
+    pele 2.1 ms · 3.8 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/flowchart.light.svg" alt="mermaid flowchart"></td><td class="light"><img src="pele/flowchart.light.svg" alt="pele flowchart"></td></tr>
+  <tr><td class="dark"><img src="mermaid/flowchart.dark.svg" alt="mermaid flowchart"></td><td class="dark"><img src="pele/flowchart.dark.svg" alt="pele flowchart"></td></tr>
+  <tr><th colspan="2">gantt
+    <small>mermaid 22.3 ms · 10.8 KB —
+    pele 8.4 ms · 3.4 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/gantt.light.svg" alt="mermaid gantt"></td><td class="light"><img src="pele/gantt.light.svg" alt="pele gantt"></td></tr>
+  <tr><td class="dark"><img src="mermaid/gantt.dark.svg" alt="mermaid gantt"></td><td class="dark"><img src="pele/gantt.dark.svg" alt="pele gantt"></td></tr>
+  <tr><th colspan="2">gitgraph
+    <small>mermaid 32.8 ms · 11.4 KB —
+    pele 7.4 ms · 4.9 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/gitgraph.light.svg" alt="mermaid gitgraph"></td><td class="light"><img src="pele/gitgraph.light.svg" alt="pele gitgraph"></td></tr>
+  <tr><td class="dark"><img src="mermaid/gitgraph.dark.svg" alt="mermaid gitgraph"></td><td class="dark"><img src="pele/gitgraph.dark.svg" alt="pele gitgraph"></td></tr>
+  <tr><th colspan="2">journey-cjk
+    <small>mermaid 62.7 ms · 11.4 KB —
+    pele 64.6 ms · 6.0 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/journey-cjk.light.svg" alt="mermaid journey-cjk"></td><td class="light"><img src="pele/journey-cjk.light.svg" alt="pele journey-cjk"></td></tr>
+  <tr><td class="dark"><img src="mermaid/journey-cjk.dark.svg" alt="mermaid journey-cjk"></td><td class="dark"><img src="pele/journey-cjk.dark.svg" alt="pele journey-cjk"></td></tr>
+  <tr><th colspan="2">journey
+    <small>mermaid 7.5 ms · 11.5 KB —
+    pele 1.4 ms · 6.3 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/journey.light.svg" alt="mermaid journey"></td><td class="light"><img src="pele/journey.light.svg" alt="pele journey"></td></tr>
+  <tr><td class="dark"><img src="mermaid/journey.dark.svg" alt="mermaid journey"></td><td class="dark"><img src="pele/journey.dark.svg" alt="pele journey"></td></tr>
+  <tr><th colspan="2">kanban
+    <small>mermaid 30.2 ms · 23.9 KB —
+    pele 6.2 ms · 3.6 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/kanban.light.svg" alt="mermaid kanban"></td><td class="light"><img src="pele/kanban.light.svg" alt="pele kanban"></td></tr>
+  <tr><td class="dark"><img src="mermaid/kanban.dark.svg" alt="mermaid kanban"></td><td class="dark"><img src="pele/kanban.dark.svg" alt="pele kanban"></td></tr>
+  <tr><th colspan="2">mindmap
+    <small>mermaid 87.3 ms · 46.1 KB —
+    pele 5.4 ms · 6.6 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/mindmap.light.svg" alt="mermaid mindmap"></td><td class="light"><img src="pele/mindmap.light.svg" alt="pele mindmap"></td></tr>
+  <tr><td class="dark"><img src="mermaid/mindmap.dark.svg" alt="mermaid mindmap"></td><td class="dark"><img src="pele/mindmap.dark.svg" alt="pele mindmap"></td></tr>
+  <tr><th colspan="2">pie
+    <small>mermaid 17.8 ms · 4.7 KB —
+    pele 4.9 ms · 2.5 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/pie.light.svg" alt="mermaid pie"></td><td class="light"><img src="pele/pie.light.svg" alt="pele pie"></td></tr>
+  <tr><td class="dark"><img src="mermaid/pie.dark.svg" alt="mermaid pie"></td><td class="dark"><img src="pele/pie.dark.svg" alt="pele pie"></td></tr>
+  <tr><th colspan="2">quadrant
+    <small>mermaid 18.9 ms · 7.0 KB —
+    pele 7.6 ms · 3.6 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/quadrant.light.svg" alt="mermaid quadrant"></td><td class="light"><img src="pele/quadrant.light.svg" alt="pele quadrant"></td></tr>
+  <tr><td class="dark"><img src="mermaid/quadrant.dark.svg" alt="mermaid quadrant"></td><td class="dark"><img src="pele/quadrant.dark.svg" alt="pele quadrant"></td></tr>
+  <tr><th colspan="2">requirement
+    <small>mermaid 34.4 ms · 17.4 KB —
+    pele 7.6 ms · 6.0 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/requirement.light.svg" alt="mermaid requirement"></td><td class="light"><img src="pele/requirement.light.svg" alt="pele requirement"></td></tr>
+  <tr><td class="dark"><img src="mermaid/requirement.dark.svg" alt="mermaid requirement"></td><td class="dark"><img src="pele/requirement.dark.svg" alt="pele requirement"></td></tr>
+  <tr><th colspan="2">sankey
+    <small>mermaid 16.2 ms · 6.8 KB —
+    pele 5.6 ms · 4.1 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/sankey.light.svg" alt="mermaid sankey"></td><td class="light"><img src="pele/sankey.light.svg" alt="pele sankey"></td></tr>
+  <tr><td class="dark"><img src="mermaid/sankey.dark.svg" alt="mermaid sankey"></td><td class="dark"><img src="pele/sankey.dark.svg" alt="pele sankey"></td></tr>
+  <tr><th colspan="2">sequence-cjk-narrow
+    <small>mermaid 71.8 ms · 26.9 KB —
+    pele 9.8 ms · 4.2 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/sequence-cjk-narrow.light.svg" alt="mermaid sequence-cjk-narrow"></td><td class="light"><img src="pele/sequence-cjk-narrow.light.svg" alt="pele sequence-cjk-narrow"></td></tr>
+  <tr><td class="dark"><img src="mermaid/sequence-cjk-narrow.dark.svg" alt="mermaid sequence-cjk-narrow"></td><td class="dark"><img src="pele/sequence-cjk-narrow.dark.svg" alt="pele sequence-cjk-narrow"></td></tr>
+  <tr><th colspan="2">sequence-cjk
+    <small>mermaid 55.8 ms · 33.2 KB —
+    pele 5.1 ms · 5.3 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/sequence-cjk.light.svg" alt="mermaid sequence-cjk"></td><td class="light"><img src="pele/sequence-cjk.light.svg" alt="pele sequence-cjk"></td></tr>
+  <tr><td class="dark"><img src="mermaid/sequence-cjk.dark.svg" alt="mermaid sequence-cjk"></td><td class="dark"><img src="pele/sequence-cjk.dark.svg" alt="pele sequence-cjk"></td></tr>
+  <tr><th colspan="2">sequence
+    <small>mermaid 9.6 ms · 23.8 KB —
+    pele 0.7 ms · 3.3 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/sequence.light.svg" alt="mermaid sequence"></td><td class="light"><img src="pele/sequence.light.svg" alt="pele sequence"></td></tr>
+  <tr><td class="dark"><img src="mermaid/sequence.dark.svg" alt="mermaid sequence"></td><td class="dark"><img src="pele/sequence.dark.svg" alt="pele sequence"></td></tr>
+  <tr><th colspan="2">state
+    <small>mermaid 41.3 ms · 30.4 KB —
+    pele 7.3 ms · 3.3 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/state.light.svg" alt="mermaid state"></td><td class="light"><img src="pele/state.light.svg" alt="pele state"></td></tr>
+  <tr><td class="dark"><img src="mermaid/state.dark.svg" alt="mermaid state"></td><td class="dark"><img src="pele/state.dark.svg" alt="pele state"></td></tr>
+  <tr><th colspan="2">timeline-cjk
+    <small>mermaid 70.4 ms · 16.2 KB —
+    pele 11.6 ms · 4.0 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/timeline-cjk.light.svg" alt="mermaid timeline-cjk"></td><td class="light"><img src="pele/timeline-cjk.light.svg" alt="pele timeline-cjk"></td></tr>
+  <tr><td class="dark"><img src="mermaid/timeline-cjk.dark.svg" alt="mermaid timeline-cjk"></td><td class="dark"><img src="pele/timeline-cjk.dark.svg" alt="pele timeline-cjk"></td></tr>
+  <tr><th colspan="2">timeline
+    <small>mermaid 7 ms · 16.7 KB —
+    pele 1 ms · 4.2 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/timeline.light.svg" alt="mermaid timeline"></td><td class="light"><img src="pele/timeline.light.svg" alt="pele timeline"></td></tr>
+  <tr><td class="dark"><img src="mermaid/timeline.dark.svg" alt="mermaid timeline"></td><td class="dark"><img src="pele/timeline.dark.svg" alt="pele timeline"></td></tr>
+  <tr><th colspan="2">xychart
+    <small>mermaid 26 ms · 13.6 KB —
+    pele 6.1 ms · 4.7 KB</small></th></tr>
+  <tr><td class="light"><img src="mermaid/xychart.light.svg" alt="mermaid xychart"></td><td class="light"><img src="pele/xychart.light.svg" alt="pele xychart"></td></tr>
+  <tr><td class="dark"><img src="mermaid/xychart.dark.svg" alt="mermaid xychart"></td><td class="dark"><img src="pele/xychart.dark.svg" alt="pele xychart"></td></tr></tbody></table>

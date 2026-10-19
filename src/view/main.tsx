@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { renderDiagram, describeError, sanitizeSvg } from '../lib/render.js';
 import { ensureAccessibleName } from '../lib/a11y-name.js';
 import { centerMindmapLabels } from '../lib/mindmap-labels.js';
-import { loadMermaid, resolvedVersion } from '../lib/mermaid-registry.js';
+import { ENGINE, loadMermaid, resolvedVersion, warmRenderer } from '../lib/mermaid-registry.js';
 import {
   enableTheme,
   getConfig,
@@ -446,7 +446,8 @@ function App() {
   // — and costs nothing on the cache-hit path, which never enters 'deferred'.
   useEffect(() => {
     if (state.status !== 'deferred' || !config) return;
-    loadMermaid(config.mermaidVersion).catch(() => {
+    // The experimental Pele build warms Pele instead (see pele-engine.ts).
+    (ENGINE === 'pele' ? warmRenderer : loadMermaid)(config.mermaidVersion).catch(() => {
       // A fetch failure surfaces from the real render below, with an error
       // state to land in; here it would just be an unhandled rejection.
     });

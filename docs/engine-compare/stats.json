@@ -1,0 +1,314 @@
+[
+  {
+    "name": "acc-labelled",
+    "mermaid": {
+      "ms": 21.1,
+      "bytes": 14933,
+      "error": null
+    },
+    "pele": {
+      "ms": 1.5,
+      "bytes": 2926,
+      "error": null
+    }
+  },
+  {
+    "name": "architecture",
+    "mermaid": {
+      "ms": 229,
+      "bytes": 13153,
+      "error": null
+    },
+    "pele": {
+      "ms": 9.1,
+      "bytes": 4334,
+      "error": null
+    }
+  },
+  {
+    "name": "block",
+    "mermaid": {
+      "ms": 33.7,
+      "bytes": 12778,
+      "error": null
+    },
+    "pele": {
+      "ms": 6.1,
+      "bytes": 3072,
+      "error": null
+    }
+  },
+  {
+    "name": "c4",
+    "mermaid": {
+      "ms": 35.5,
+      "bytes": 27134,
+      "error": null
+    },
+    "pele": {
+      "ms": 11.5,
+      "bytes": 4245,
+      "error": null
+    }
+  },
+  {
+    "name": "class",
+    "mermaid": {
+      "ms": 75.2,
+      "bytes": 34183,
+      "error": null
+    },
+    "pele": {
+      "ms": 11.8,
+      "bytes": 5652,
+      "error": null
+    }
+  },
+  {
+    "name": "er",
+    "mermaid": {
+      "ms": 27.7,
+      "bytes": 12189,
+      "error": null
+    },
+    "pele": {
+      "ms": 7.1,
+      "bytes": 4066,
+      "error": null
+    }
+  },
+  {
+    "name": "flowchart",
+    "mermaid": {
+      "ms": 23.5,
+      "bytes": 18066,
+      "error": null
+    },
+    "pele": {
+      "ms": 2.1,
+      "bytes": 3921,
+      "error": null
+    }
+  },
+  {
+    "name": "gantt",
+    "mermaid": {
+      "ms": 22.3,
+      "bytes": 11055,
+      "error": null
+    },
+    "pele": {
+      "ms": 8.4,
+      "bytes": 3456,
+      "error": null
+    }
+  },
+  {
+    "name": "gitgraph",
+    "mermaid": {
+      "ms": 32.8,
+      "bytes": 11629,
+      "error": null
+    },
+    "pele": {
+      "ms": 7.4,
+      "bytes": 4988,
+      "error": null
+    }
+  },
+  {
+    "name": "journey-cjk",
+    "mermaid": {
+      "ms": 62.7,
+      "bytes": 11632,
+      "error": null
+    },
+    "pele": {
+      "ms": 64.6,
+      "bytes": 6174,
+      "error": null
+    }
+  },
+  {
+    "name": "journey",
+    "mermaid": {
+      "ms": 7.5,
+      "bytes": 11802,
+      "error": null
+    },
+    "pele": {
+      "ms": 1.4,
+      "bytes": 6475,
+      "error": null
+    }
+  },
+  {
+    "name": "kanban",
+    "mermaid": {
+      "ms": 30.2,
+      "bytes": 24455,
+      "error": null
+    },
+    "pele": {
+      "ms": 6.2,
+      "bytes": 3736,
+      "error": null
+    }
+  },
+  {
+    "name": "mindmap",
+    "mermaid": {
+      "ms": 87.3,
+      "bytes": 47253,
+      "error": null
+    },
+    "pele": {
+      "ms": 5.4,
+      "bytes": 6797,
+      "error": null
+    }
+  },
+  {
+    "name": "pie",
+    "mermaid": {
+      "ms": 17.8,
+      "bytes": 4803,
+      "error": null
+    },
+    "pele": {
+      "ms": 4.9,
+      "bytes": 2594,
+      "error": null
+    }
+  },
+  {
+    "name": "quadrant",
+    "mermaid": {
+      "ms": 18.9,
+      "bytes": 7194,
+      "error": null
+    },
+    "pele": {
+      "ms": 7.6,
+      "bytes": 3706,
+      "error": null
+    }
+  },
+  {
+    "name": "requirement",
+    "mermaid": {
+      "ms": 34.4,
+      "bytes": 17852,
+      "error": null
+    },
+    "pele": {
+      "ms": 7.6,
+      "bytes": 6169,
+      "error": null
+    }
+  },
+  {
+    "name": "sankey",
+    "mermaid": {
+      "ms": 16.2,
+      "bytes": 7005,
+      "error": null
+    },
+    "pele": {
+      "ms": 5.6,
+      "bytes": 4243,
+      "error": null
+    }
+  },
+  {
+    "name": "sequence-cjk-narrow",
+    "mermaid": {
+      "ms": 71.8,
+      "bytes": 27587,
+      "error": null
+    },
+    "pele": {
+      "ms": 9.8,
+      "bytes": 4265,
+      "error": null
+    }
+  },
+  {
+    "name": "sequence-cjk",
+    "mermaid": {
+      "ms": 55.8,
+      "bytes": 34017,
+      "error": null
+    },
+    "pele": {
+      "ms": 5.1,
+      "bytes": 5397,
+      "error": null
+    }
+  },
+  {
+    "name": "sequence",
+    "mermaid": {
+      "ms": 9.6,
+      "bytes": 24413,
+      "error": null
+    },
+    "pele": {
+      "ms": 0.7,
+      "bytes": 3334,
+      "error": null
+    }
+  },
+  {
+    "name": "state",
+    "mermaid": {
+      "ms": 41.3,
+      "bytes": 31113,
+      "error": null
+    },
+    "pele": {
+      "ms": 7.3,
+      "bytes": 3391,
+      "error": null
+    }
+  },
+  {
+    "name": "timeline-cjk",
+    "mermaid": {
+      "ms": 70.4,
+      "bytes": 16592,
+      "error": null
+    },
+    "pele": {
+      "ms": 11.6,
+      "bytes": 4073,
+      "error": null
+    }
+  },
+  {
+    "name": "timeline",
+    "mermaid": {
+      "ms": 7,
+      "bytes": 17064,
+      "error": null
+    },
+    "pele": {
+      "ms": 1,
+      "bytes": 4305,
+      "error": null
+    }
+  },
+  {
+    "name": "xychart",
+    "mermaid": {
+      "ms": 26,
+      "bytes": 13894,
+      "error": null
+    },
+    "pele": {
+      "ms": 6.1,
+      "bytes": 4825,
+      "error": null
+    }
+  }
+]

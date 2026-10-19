@@ -34,6 +34,13 @@ const RESOLVED: Record<string, string> = {
   10: __MERMAID_10_VERSION__,
 };
 
+/**
+ * Which library renders, fixed at build time (MERFLUENCE_ENGINE, see
+ * vite.view.config.js). 'pele' is an experiment; it bypasses the per-major
+ * loaders below but leaves them, and the pinned versions, untouched.
+ */
+export const ENGINE: 'mermaid' | 'pele' = __RENDER_ENGINE__ === 'pele' ? 'pele' : 'mermaid';
+
 const cache = new Map();
 
 /** Options offered in the config panel's version dropdown. */
@@ -50,7 +57,16 @@ export function resolveMajor(pref?: string) {
 
 /** The exact semver that will do the rendering, for display. */
 export function resolvedVersion(pref?: string) {
+  // Prefixed so a Pele render can never be mistaken for a Mermaid semver — the
+  // cache uses this to keep the two engines' stored SVGs apart.
+  if (ENGINE === 'pele') return `pele ${__PELE_VERSION__}`;
   return RESOLVED[resolveMajor(pref)];
+}
+
+/** Start fetching whichever renderer this build uses, without rendering. */
+export function warmRenderer(pref = 'auto'): Promise<unknown> {
+  if (ENGINE === 'pele') return import('./pele-engine.js').then((m) => m.loadPele());
+  return loadMermaid(pref);
 }
 
 export async function loadMermaid(pref = 'auto') {

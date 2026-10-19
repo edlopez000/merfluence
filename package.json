@@ -28,7 +28,8 @@
     "sbom": "cyclonedx-npm --omit dev --spec-version 1.6 --output-format JSON --output-file sbom.cdx.json",
     "deploy:staging": "npm run build && forge deploy -e staging",
     "deploy:production": "npm run build && forge deploy -e production",
-    "prepare": "husky"
+    "prepare": "husky",
+    "compare:engines": "vitest run --config vitest.compare.config.js"
   },
   "lint-staged": {
     "*.{js,jsx,mjs,ts,tsx}": [
@@ -50,6 +51,7 @@
     "dompurify": "^3.2.3",
     "mermaid": "^11.4.1",
     "mermaid-10": "npm:mermaid@^10.9.3",
+    "pele": "^1.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

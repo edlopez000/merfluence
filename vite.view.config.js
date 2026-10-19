@@ -10,6 +10,11 @@ const require = createRequire(import.meta.url);
 export const mermaidVersions = {
   __MERMAID_11_VERSION__: JSON.stringify(require('mermaid/package.json').version),
   __MERMAID_10_VERSION__: JSON.stringify(require('mermaid-10/package.json').version),
+  __PELE_VERSION__: JSON.stringify(require('pele/package.json').version),
+  // EXPERIMENTAL: MERFLUENCE_ENGINE=pele swaps the renderer for Pele at build
+  // time (see src/lib/pele-engine.ts). Anything else — including unset, which
+  // is every CI and release build — is Mermaid.
+  __RENDER_ENGINE__: JSON.stringify(process.env.MERFLUENCE_ENGINE === 'pele' ? 'pele' : 'mermaid'),
 };
 
 /**
