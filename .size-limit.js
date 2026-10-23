@@ -34,16 +34,24 @@
 // config budget is tightened rather than raised. Headroom absorbs ordinary
 // dependency churn while still failing hard on a folded-in engine (the smallest
 // deferred engine is far larger than the gap).
+// Re-measured 2026-10-22 for the DOMPurify 3.4.15 -> 3.4.17 security bump, which
+// adds ~0.75 kB to the shared vendor chunk. main already sat at 79.70 kB and
+// 161.96 kB — 40 B under the editor budget — so the bump could not land without
+// a raise, and a critical XSS fix in the sanitizer is not optional:
+//   reader view          — 80.46 kB brotli   (budget 84 kB,  ~4% headroom)
+//   config editor        — 162.70 kB brotli  (budget 170 kB, ~4% headroom)
+// Both budgets rose 5%. That is still far below the smallest deferred engine,
+// so a folded-in engine fails exactly as before.
 // Raising a limit should be a conscious edit here, with the new baseline noted.
 export default [
   {
     name: 'reader view — initial load (entry + vendor)',
     path: ['static/view/dist/assets/entry-*.js', 'static/view/dist/assets/vendor-*.js'],
-    limit: '80 kB',
+    limit: '84 kB',
   },
   {
     name: 'config editor — initial load (entry + vendor)',
     path: ['static/config/dist/assets/entry-*.js', 'static/config/dist/assets/vendor-*.js'],
-    limit: '162 kB',
+    limit: '170 kB',
   },
 ];

@@ -1,9 +1,18 @@
-# Global owner — pairs with the `main-ruleset` branch protection, so every PR
-# lands with a review request on the maintainer.
-* @edlopez000
+# No global `*` owner. The `main-ruleset` requires code-owner review, so a
+# catch-all here made every PR wait on the maintainer — including Renovate's
+# dev-tooling group, which renovate.json marks automerge and which could then
+# never merge. Ownership is listed per path instead: package.json and
+# package-lock.json are deliberately absent, and Renovate's own automerge
+# setting decides which dependency PRs still need a human.
 
 # The security claim itself. These files are the product; a change to any of
 # them is a change to what the app promises.
 /manifest.yml @edlopez000
 /test/manifest.test.js @edlopez000
 /SECURITY.md @edlopez000
+
+# Shipped code, and the pipeline that tests and deploys it.
+/src/ @edlopez000
+/static/ @edlopez000
+/.github/ @edlopez000
+/renovate.json @edlopez000
