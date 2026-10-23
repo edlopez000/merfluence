@@ -595,7 +595,12 @@ export function Stage({
   // which zooms the whole Confluence page. Binding wheel ourselves with
   // { passive: false } lets preventDefault actually cancel that page zoom, so
   // only the diagram scales.
-  useEffect(() => {
+  //
+  // A layout effect, not a passive one: a passive effect binds a beat after the
+  // stage is on screen, and a ctrl+wheel landing in that gap reaches the
+  // browser uncancelled and zooms the page. test/config-app.test.jsx hit the
+  // same gap on loaded CI runners as a flaky "zooms on ctrl+wheel".
+  useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el) return;
     // Wheel events are not frame-aligned — a trackpad delivers well over one per
