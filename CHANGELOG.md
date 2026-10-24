@@ -9,6 +9,14 @@ below the `1.0.0` seed are generated automatically by
 [Conventional Commits](https://www.conventionalcommits.org/) — do not edit
 generated sections by hand. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [1.6.2](https://github.com/edlopez000/merfluence/compare/v1.6.1...v1.6.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* bind the stage's wheel listener before the first paint ([#230](https://github.com/edlopez000/merfluence/issues/230)) ([b6f2f4b](https://github.com/edlopez000/merfluence/commit/b6f2f4be54a4fc51c7078abe07abf0e0e217a1ec))
+* **deps:** bump dompurify to 3.4.17 ([#228](https://github.com/edlopez000/merfluence/issues/228)) ([d83078f](https://github.com/edlopez000/merfluence/commit/d83078f125ffc745c75be68c39fae0b3235b0bfe))
+
 ## [1.6.1](https://github.com/edlopez000/merfluence/compare/v1.6.0...v1.6.1) (2026-08-20)
 
 
