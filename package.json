@@ -48,7 +48,7 @@
     "@codemirror/view": "^6.36.1",
     "@forge/bridge": "^4.0.0",
     "@lezer/highlight": "^1.2.3",
-    "dompurify": "^3.2.3",
+    "dompurify": "^3.4.17",
     "mermaid": "^11.4.1",
     "mermaid-10": "npm:mermaid@^10.9.3",
     "pele": "^1.6.0",
